@@ -1,0 +1,99 @@
+// Raw event record types from ~/.copilot/session-state/<id>/events.jsonl
+export interface RawEvent {
+  type: string;
+  data: Record<string, unknown>;
+  id: string;
+  timestamp: string;
+  parentId: string | null;
+}
+
+export interface SessionStartData {
+  sessionId: string;
+  version: number;
+  producer: string;
+  copilotVersion: string;
+  startTime: string;
+  context: {
+    cwd: string;
+    gitRoot?: string;
+    branch?: string;
+    headCommit?: string;
+    baseCommit?: string;
+  };
+  alreadyInUse: boolean;
+}
+
+export interface UserMessageData {
+  content: string;
+  transformedContent?: string;
+  source: string;
+  interactionId: string;
+}
+
+export interface AssistantMessageData {
+  messageId: string;
+  content: string;
+  toolRequests?: ToolRequest[];
+  interactionId: string;
+  outputTokens?: number;
+}
+
+export interface ToolRequest {
+  toolCallId: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  type: string;
+  toolTitle?: string;
+  intentionSummary?: string;
+}
+
+export interface ToolExecutionCompleteData {
+  toolCallId: string;
+  toolName: string;
+  interactionId: string;
+  success: boolean;
+  result?: { content: string; detailedContent?: string };
+  error?: { message: string; code: string };
+}
+
+export interface ShutdownData {
+  shutdownType: string;
+  totalPremiumRequests: number;
+  totalApiDurationMs: number;
+  sessionStartTime: number;
+  codeChanges?: {
+    linesAdded: number;
+    linesRemoved: number;
+    filesModified: string[];
+  };
+  modelMetrics?: Record<string, unknown>;
+  currentModel?: string;
+}
+
+// Parsed / normalised types used by the API
+export interface ParsedMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  toolRequests?: ToolRequest[];
+  timestamp: string;
+  interactionId?: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  title: string;
+  projectPath: string;
+  gitBranch: string | null;
+  startedAt: string;
+  lastActivityAt: string;
+  durationMs: number;
+  isOpen: boolean; // false if session.shutdown exists
+  needsAttention: boolean;
+  messageCount: number; // user messages only
+  model?: string;
+}
+
+export interface SessionDetail extends SessionSummary {
+  messages: ParsedMessage[];
+}
