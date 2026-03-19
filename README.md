@@ -1,6 +1,69 @@
 # Copilot Sessions Dashboard
 
-A local web dashboard for monitoring your [Copilot CLI](https://github.com/github/copilot-cli) sessions in real time. Displays active sessions, message history, tool call details, and fires browser notifications when a session needs your attention or completes a task.
+> **Real-time web UI for monitoring agentic coding sessions in the Copilot CLI** — track active agents, sub-agent orchestration, tool calls, plans, and todos from a single browser tab.
+
+A local web dashboard for [Copilot CLI](https://github.com/github/copilot-cli) that gives you full visibility into what your AI coding agent is doing. Whether you're running multi-agent workflows, waiting for plan approval, or just checking whether a long task is still in progress — this dashboard surfaces it all without touching your terminal.
+
+**Keywords:** agentic coding dashboard · Copilot CLI UI · AI coding agent monitor · multi-agent orchestration viewer · Claude Code sessions UI · LLM agent task tracker · sub-agent workflow visualization · AI pair programming dashboard
+
+## Features
+
+### Session monitoring
+- **Live session list** — all active Copilot CLI sessions with real-time status badges
+- **Desktop notifications** — browser push alert when any session needs your attention or completes a task, even with the tab in the background
+
+```
+┌─────────────────────────────────────────────────┐
+│ ● Search for Apigee gateway documentation       │  ← 🟡 needs attention
+│   copiloting-agents · main · 23m · 2 msgs       │
+│   [Plan review]                                 │
+│   └ ≡ Read · explore-cmt-job-flow          Done │
+│   └ ≡ Read · explore-cmt-entities-tests    Done │
+├─────────────────────────────────────────────────┤
+│ ● Implement REST client migration               │  ← 🟢 working
+│   one-web · feature/rest-client · 41m · 3 msgs  │
+│   [Working]  ≡ 1 sub-agent running             │
+├─────────────────────────────────────────────────┤
+│ ● Fix N+1 translation query performance         │  ← 🟢 task complete
+│   one-api · main · 1h 12m · 4 msgs             │
+│   [✓ Task complete]                             │
+├─────────────────────────────────────────────────┤
+│ ● Update notification stream service            │  ← ⚫ idle
+│   one-web · main · 2h 30m · 7 msgs             │
+│   [Idle]                                        │
+├─────────────────────────────────────────────────┤
+│ ● Scaffold K8s executor service                 │  ← 🔴 aborted
+│   k8s-tools · feature/executor · 3h · 2 msgs   │
+│   [Aborted]                                     │
+└─────────────────────────────────────────────────┘
+```
+
+### Conversation & tool calls
+- **Full message history** — complete conversation thread per session with timestamps
+- **Syntax-highlighted tool calls** — collapsible blocks for `bash`, `edit`, `read`, `write`, `web_fetch` with inputs and outputs
+- **Intent labels** — `report_intent` calls shown inline as readable action labels
+- **Ask user blocks** — pending questions and chosen answers rendered with choice UI
+
+### Sub-agent orchestration
+- **Sub-agent tabs** — every spawned sub-agent (Explore, Read, task-based workers) gets its own message tab inside the session detail
+- **Sub-agent status** — running agents pulse green; completed agents shown with a grey dot
+- **Parallel agents** — multiple sub-agents from the same interaction are listed newest-first
+- **Read agents** — `read_agent` tool calls tracked and surfaced as "Read · {agent-id}" tabs
+
+### Plan mode
+- **Plan tab** — view the full `plan.md` content with styled markdown (headings, checkboxes, code blocks, tables)
+- **Needs attention detection** — session automatically flagged when `exit_plan_mode` is pending approval
+- **Auto-focus** — dashboard switches to the Plan tab when a new plan is awaiting your approval
+- **Approval banner** — amber notice with instructions when plan is pending
+
+### Todo tracking
+- **Todos tab** — live task list read from the agent's `session.db` SQLite database
+- **Status groups** — tasks organised into In Progress, Blocked, Pending, and Done sections
+- **Dependency display** — expandable rows show task description and upstream dependencies
+
+### Zero cloud dependency
+- Reads `~/.copilot/session-state/` directly from disk — no API calls, no internet required
+- Polling every 5 seconds picks up new sessions and state changes automatically
 
 ## Prerequisites
 
@@ -40,13 +103,40 @@ The dashboard reads session state directly from `~/.copilot/session-state/` on y
 
 ### Session States
 
-| Badge | Meaning |
+| State | Meaning |
 |-------|---------|
-| 🟡 **Needs attention** | Agent is waiting for your input (pending tool execution) |
-| 🟢 **Working** | Agent is actively processing |
-| 🟢 **Task complete** | Agent finished the last task |
-| ⚫ **Idle** | Turn ended, waiting for your next message |
-| ⚫ **Aborted** | Last action was cancelled |
+| 🟡 **Needs attention** | Waiting for your input — pending `ask_user` or plan approval |
+| 🟢 **Working** | Agent has an active turn in progress |
+| 🟢 **Task complete** | Last task finished successfully |
+| ⚫ **Idle** | Turn ended cleanly, waiting for your next message |
+| 🔴 **Aborted** | Last action was cancelled and agent did not recover |
+
+### Session Detail & Sub-agent Orchestration
+
+Each session opens into a tabbed detail view. When the agent spawns sub-agents (Explore, Read, or task workers), each gets its own tab with its own message thread:
+
+```
+ Main │ 📖 Plan ● │ ☑ Todos │ ≡ Read · explore-cmt-job-flow ● │ ≡ Read · explore-cmt-entities ●
+──────┴───────────┴─────────┴──────────────────────────────────┴──────────────────────────────────
+
+ ⚠ Waiting for your approval · Review the plan below and approve or reject it in your terminal
+
+ # API Gateway Evaluation Plan
+ ──────────────────────────────
+ ## Steps
+   [✓] Research Apigee X capabilities and pricing model
+   [✓] Research AWS API Gateway v2 — HTTP API tier
+   [ ] Research Kong Gateway (Orbit team's existing deployment)
+   [ ] Produce comparison matrix with weighted scoring
+   [ ] Provide final recommendation with migration path
+
+ ## Constraints
+   › Must support OAuth 2.0 / OIDC natively
+   › Monthly budget ceiling: $3,000
+   › Zero-downtime migration required
+```
+
+Sub-agents run in parallel and are listed newest-first. A pulsing dot marks agents still running; a grey dot marks completed ones.
 
 ### Browser Notifications
 
