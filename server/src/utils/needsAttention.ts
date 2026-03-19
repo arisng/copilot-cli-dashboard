@@ -1,28 +1,83 @@
 import type { RawEvent } from '../sessionTypes.js';
 
-// A pending tool execution (started but not completed) means the agent is
-// paused waiting for user interaction — either an ask_user question or a
-// tool that requires approval.
-function hasPendingToolExecution(events: RawEvent[]): boolean {
-  const started = new Set<string>();
+// Only tools that require explicit user interaction should trigger needsAttention.
+// Long-running tools like bash (tests, builds) are just the agent working autonomously.
+const USER_INTERACTION_TOOLS = new Set(['ask_user', 'exit_plan_mode']);
+
+function hasPendingUserInteraction(events: RawEvent[]): boolean {
+  // Map toolCallId → toolName for started tools
+  const started = new Map<string, string>();
   const completed = new Set<string>();
+
   for (const event of events) {
     if (event.type === 'tool.execution_start') {
-      started.add(event.data['toolCallId'] as string);
+      const id = event.data['toolCallId'] as string;
+      const name = event.data['toolName'] as string;
+      started.set(id, name);
     } else if (event.type === 'tool.execution_complete') {
       completed.add(event.data['toolCallId'] as string);
     } else if (event.type === 'abort') {
-      // Abort cancels all pending tool executions without emitting completions
       started.clear();
       completed.clear();
     }
   }
-  return [...started].some((id) => !completed.has(id));
+
+  return [...started.entries()].some(
+    ([id, name]) => !completed.has(id) && USER_INTERACTION_TOOLS.has(name)
+  );
 }
 
 export function needsAttention(events: RawEvent[], isOpen: boolean): boolean {
   if (!isOpen) return false;
-  return hasPendingToolExecution(events);
+  return hasPendingUserInteraction(events);
+}
+
+// Returns true when exit_plan_mode has been called but not yet approved by the user.
+export function hasPendingPlanApproval(events: RawEvent[]): boolean {
+  const started = new Map<string, string>();
+  const completed = new Set<string>();
+
+  for (const event of events) {
+    if (event.type === 'tool.execution_start') {
+      const id = event.data['toolCallId'] as string;
+      const name = event.data['toolName'] as string;
+      started.set(id, name);
+    } else if (event.type === 'tool.execution_complete') {
+      completed.add(event.data['toolCallId'] as string);
+    } else if (event.type === 'abort') {
+      started.clear();
+      completed.clear();
+    }
+  }
+
+  return [...started.entries()].some(
+    ([id, name]) => !completed.has(id) && name === 'exit_plan_mode'
+  );
+}
+
+// Returns true when there are tool executions in-flight that are NOT user
+// interaction tools (e.g. bash, read, edit running in the background).
+// Used to keep isWorking = true even after assistant.turn_end.
+export function hasPendingWork(events: RawEvent[]): boolean {
+  const started = new Map<string, string>();
+  const completed = new Set<string>();
+
+  for (const event of events) {
+    if (event.type === 'tool.execution_start') {
+      const id = event.data['toolCallId'] as string;
+      const name = event.data['toolName'] as string;
+      started.set(id, name);
+    } else if (event.type === 'tool.execution_complete') {
+      completed.add(event.data['toolCallId'] as string);
+    } else if (event.type === 'abort') {
+      started.clear();
+      completed.clear();
+    }
+  }
+
+  return [...started.entries()].some(
+    ([id, name]) => !completed.has(id) && !USER_INTERACTION_TOOLS.has(name)
+  );
 }
 
 // Scan forward through all events, tracking state per-turn so stale signals

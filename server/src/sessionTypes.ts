@@ -82,6 +82,15 @@ export interface ParsedMessage {
   interactionId?: string;
 }
 
+export interface ActiveSubAgent {
+  toolCallId: string;
+  agentName: string;
+  agentDisplayName: string;
+  description?: string;
+  isCompleted: boolean;
+  sessionId?: string; // sub-agent's own session directory ID
+}
+
 export interface SessionSummary {
   id: string;
   title: string;
@@ -98,8 +107,25 @@ export interface SessionSummary {
   isIdle: boolean; // turn ended cleanly, waiting for next user message
   messageCount: number; // user messages only
   model?: string;
+  activeSubAgents: ActiveSubAgent[];
+  hasPlan: boolean; // plan.md exists in session directory
+  isPlanPending: boolean; // exit_plan_mode has been called and is awaiting user approval
+}
+
+export interface TodoItem {
+  id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled' | string;
+  createdAt: string;
+  updatedAt: string;
+  dependsOn: string[]; // IDs of todos this depends on
 }
 
 export interface SessionDetail extends SessionSummary {
   messages: ParsedMessage[];
+  // keyed by task toolCallId — messages that belong to each sub-agent thread
+  subAgentMessages: Record<string, ParsedMessage[]>;
+  planContent?: string; // contents of plan.md, if present
+  todos?: TodoItem[]; // from session.db todos table
 }

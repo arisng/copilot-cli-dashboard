@@ -1,3 +1,12 @@
+export interface ActiveSubAgent {
+  toolCallId: string;
+  agentName: string;
+  agentDisplayName: string;
+  description?: string;
+  isCompleted: boolean;
+  sessionId?: string;
+}
+
 export interface SessionSummary {
   id: string;
   title: string;
@@ -14,6 +23,9 @@ export interface SessionSummary {
   isIdle: boolean;
   messageCount: number;
   model?: string;
+  activeSubAgents: ActiveSubAgent[];
+  hasPlan: boolean;
+  isPlanPending: boolean;
 }
 
 export interface ToolRequest {
@@ -36,8 +48,21 @@ export interface ParsedMessage {
   interactionId?: string;
 }
 
+export interface TodoItem {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  dependsOn: string[];
+}
+
 export interface SessionDetail extends SessionSummary {
   messages: ParsedMessage[];
+  subAgentMessages: Record<string, ParsedMessage[]>;
+  planContent?: string;
+  todos?: TodoItem[];
 }
 
 export async function fetchSessions(): Promise<SessionSummary[]> {

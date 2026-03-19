@@ -108,6 +108,83 @@ function AskUserBlock({ tool }: { tool: ToolRequest }) {
   );
 }
 
+const AGENT_TYPE_LABELS: Record<string, string> = {
+  'explore':                    'Explore',
+  'general-purpose':            'General',
+  'Plan':                       'Plan',
+  'claude-code-guide':          'Guide',
+};
+
+function TaskBlock({ tool }: { tool: ToolRequest }) {
+  const args = tool.arguments as {
+    agent_type?: string;
+    description?: string;
+    prompt?: string;
+    mode?: string;
+  };
+  const result = tool.result?.detailedContent ?? tool.result?.content;
+  const hasError = !!tool.error;
+  const agentLabel = args.agent_type
+    ? (AGENT_TYPE_LABELS[args.agent_type] ?? args.agent_type)
+    : 'Agent';
+  const isDone = !!result || hasError;
+
+  return (
+    <details className={`rounded border ${hasError ? 'border-gh-attention/30' : 'border-green-400/30'} bg-gh-bg text-xs group`}>
+      <summary className="px-3 py-2 cursor-pointer list-none flex items-center gap-2 hover:bg-white/5 transition-colors">
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasError ? 'bg-gh-attention' : isDone ? 'bg-green-400' : 'bg-green-400 animate-pulse'}`} />
+
+        {/* Agent type badge */}
+        <span className={`font-mono font-medium text-xs px-1.5 py-0.5 rounded ${hasError ? 'text-gh-attention' : 'text-green-400'}`}
+          style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+          {agentLabel}
+        </span>
+
+        {/* Description */}
+        {args.description && (
+          <span className="text-gh-muted truncate">{args.description}</span>
+        )}
+
+        {/* Mode badge */}
+        {args.mode && args.mode !== 'sync' && (
+          <span className="ml-auto mr-1 text-gh-muted/40 font-mono">{args.mode}</span>
+        )}
+
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"
+          className={`${args.mode ? '' : 'ml-auto'} flex-shrink-0 text-gh-muted/50 transition-transform group-open:rotate-90`}>
+          <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
+        </svg>
+      </summary>
+
+      <div className="border-t border-green-400/20 divide-y divide-gh-border/20">
+        {/* Prompt */}
+        {args.prompt && (
+          <div>
+            <div className="px-3 py-1 text-green-400/60 text-xs font-medium uppercase tracking-wider border-b border-gh-border/30">
+              Prompt
+            </div>
+            <pre className="px-3 py-2 overflow-x-auto font-mono text-xs text-gh-muted whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+              {args.prompt}
+            </pre>
+          </div>
+        )}
+
+        {/* Result */}
+        {(result || hasError) && (
+          <div>
+            <div className={`px-3 py-1 text-xs font-medium uppercase tracking-wider border-b border-gh-border/30 ${hasError ? 'text-gh-attention/60' : 'text-green-400/60'}`}>
+              {hasError ? 'Error' : 'Result'}
+            </div>
+            <pre className={`px-3 py-2 overflow-x-auto font-mono text-xs whitespace-pre-wrap break-all ${hasError ? 'text-gh-attention' : 'text-gh-muted'}`}>
+              {hasError ? `${tool.error!.message} (${tool.error!.code})` : result}
+            </pre>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function EditBlock({ tool }: { tool: ToolRequest }) {
   const args = tool.arguments as { path?: string; old_str?: string; new_str?: string };
   const fileName = args.path?.split('/').pop() ?? args.path ?? 'file';
@@ -409,7 +486,9 @@ export function MessageBubble({ message }: Props) {
                   ? <EditBlock key={tool.toolCallId} tool={tool} />
                   : tool.name === 'bash'
                     ? <BashBlock key={tool.toolCallId} tool={tool} />
-                    : <ToolCallBlock key={tool.toolCallId} tool={tool} />
+                    : (tool.name === 'task' || tool.name === 'task_complete')
+                      ? <TaskBlock key={tool.toolCallId} tool={tool} />
+                      : <ToolCallBlock key={tool.toolCallId} tool={tool} />
             )}
           </div>
         )}
