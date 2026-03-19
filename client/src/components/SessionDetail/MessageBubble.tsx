@@ -343,6 +343,92 @@ function AtlassianBlock({ tool }: { tool: ToolRequest }) {
   );
 }
 
+const FIGMA_TOOL_META: Record<string, { action: string }> = {
+  'figma-get_screenshot':     { action: 'Screenshot' },
+  'figma-get_design_context': { action: 'Design Context' },
+  'figma-get_metadata':       { action: 'Metadata' },
+};
+
+function FigmaBlock({ tool }: { tool: ToolRequest }) {
+  const meta = FIGMA_TOOL_META[tool.name] ?? { action: tool.name.replace('figma-', '').replace(/_/g, ' ') };
+  const args = tool.arguments as { nodeId?: string; clientLanguages?: string; clientFrameworks?: string; artifactType?: string };
+  const nodeId = args.nodeId;
+  const hasError = !!tool.error;
+  const isDone = !!tool.result || hasError;
+
+  const color = { dot: 'bg-violet-400', label: 'text-violet-400', border: 'border-violet-400/30', section: 'text-violet-400/60', badge: 'bg-violet-400/10 text-violet-400' };
+
+  return (
+    <details className={`rounded border ${hasError ? 'border-gh-attention/30' : color.border} bg-gh-bg text-xs group`}>
+      <summary className="px-3 py-2 cursor-pointer list-none flex items-center gap-2 hover:bg-white/5 transition-colors">
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasError ? 'bg-gh-attention' : isDone ? color.dot : `${color.dot} animate-pulse`}`} />
+
+        {/* Product badge */}
+        <span className={`font-medium text-xs px-1.5 py-0.5 rounded ${color.badge}`}>
+          Figma
+        </span>
+
+        {/* Action */}
+        <span className={`font-mono font-medium ${color.label}`}>{meta.action}</span>
+
+        {/* Node ID */}
+        {nodeId ? (
+          <span className="text-gh-muted font-mono truncate" title={nodeId}>
+            #{nodeId}
+          </span>
+        ) : (
+          <span className="text-gh-muted/40 italic">no node</span>
+        )}
+
+        {!hasError && (
+          <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"
+            className="ml-auto flex-shrink-0 text-gh-muted/50 transition-transform group-open:rotate-90">
+            <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
+          </svg>
+        )}
+      </summary>
+
+      <div className={`border-t ${color.border} divide-y divide-gh-border/20`}>
+        {/* Details */}
+        {(args.clientFrameworks || args.clientLanguages || args.artifactType) && (
+          <div className="px-3 py-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+            {args.clientFrameworks && (
+              <>
+                <span className={`${color.section} font-medium uppercase tracking-wide text-xs leading-5 whitespace-nowrap`}>Frameworks</span>
+                <span className="text-gh-muted font-mono text-xs leading-5">{args.clientFrameworks}</span>
+              </>
+            )}
+            {args.clientLanguages && (
+              <>
+                <span className={`${color.section} font-medium uppercase tracking-wide text-xs leading-5 whitespace-nowrap`}>Languages</span>
+                <span className="text-gh-muted font-mono text-xs leading-5">{args.clientLanguages}</span>
+              </>
+            )}
+            {args.artifactType && (
+              <>
+                <span className={`${color.section} font-medium uppercase tracking-wide text-xs leading-5 whitespace-nowrap`}>Artifact</span>
+                <span className="text-gh-muted font-mono text-xs leading-5">{args.artifactType.replace(/_/g, ' ').toLowerCase()}</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Result / error */}
+        {(tool.result?.content || hasError) && (
+          <div>
+            <div className={`px-3 py-1 text-xs font-medium uppercase tracking-wider border-b border-gh-border/30 ${hasError ? 'text-gh-attention/60' : color.section}`}>
+              {hasError ? 'Error' : 'Result'}
+            </div>
+            <pre className={`px-3 py-2 overflow-x-auto font-mono text-xs whitespace-pre-wrap break-all max-h-48 overflow-y-auto ${hasError ? 'text-gh-attention' : 'text-gh-muted'}`}>
+              {hasError ? `${tool.error!.message} (${tool.error!.code})` : tool.result!.content}
+            </pre>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function ReportIntentBlock({ tool }: { tool: ToolRequest }) {
   const args = tool.arguments as { intent?: string };
   if (!args.intent) return null;
@@ -661,7 +747,9 @@ export function MessageBubble({ message }: Props) {
                         ? <TaskBlock key={tool.toolCallId} tool={tool} />
                         : tool.name.startsWith('mcp-atlassian-')
                           ? <AtlassianBlock key={tool.toolCallId} tool={tool} />
-                          : <ToolCallBlock key={tool.toolCallId} tool={tool} />
+                          : tool.name.startsWith('figma-')
+                            ? <FigmaBlock key={tool.toolCallId} tool={tool} />
+                            : <ToolCallBlock key={tool.toolCallId} tool={tool} />
             )}
           </div>
         )}
