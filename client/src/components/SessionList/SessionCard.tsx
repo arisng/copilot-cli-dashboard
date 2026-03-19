@@ -154,13 +154,18 @@ export function SessionCard({ session }: Props) {
     <div
       onClick={() => navigate(`/sessions/${session.id}`)}
       className={`
-        bg-gh-surface border border-gh-border rounded-lg cursor-pointer
-        hover:border-gh-border/80 hover:bg-gh-surface/80 transition-colors
+        bg-gh-surface rounded-lg cursor-pointer transition-colors
         flex flex-col overflow-hidden
-        ${session.needsAttention ? 'border-l-2 border-l-gh-attention' : ''}
+        ${session.needsAttention
+          ? 'border border-gh-attention/60 hover:border-gh-attention/80'
+          : session.isWorking
+          ? 'border border-gh-active/50 hover:border-gh-active/70'
+          : 'border border-gh-border hover:border-gh-border/80 hover:bg-gh-surface/80'
+        }
       `}
     >
       {/* Header */}
+
       <div className="px-4 pt-3 pb-2">
         <p className="text-gh-text font-medium text-sm leading-snug line-clamp-2">
           {session.title}
