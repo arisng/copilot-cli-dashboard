@@ -1,7 +1,36 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SessionDetail } from '../../api/client.ts';
 import { formatDuration } from '../shared/RelativeTime.tsx';
 import { AttentionBadge } from '../SessionList/AttentionBadge.tsx';
+
+function CopyBranch({ branch }: { branch: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(branch).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      title="Copy branch name"
+      className="group flex items-center gap-1.5 font-mono text-gh-accent hover:text-gh-accent/80 transition-colors"
+    >
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+        <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.128a2.251 2.251 0 11-1.5 0V5.372a2.25 2.25 0 111.5 0v1.836A2.492 2.492 0 016 7h4a1 1 0 001-1v-.628A2.25 2.25 0 019.5 3.25zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zM3.5 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z" />
+      </svg>
+      <span>{branch}</span>
+      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs">
+        {copied ? '✓' : (
+          <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+            <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
+          </svg>
+        )}
+      </span>
+    </button>
+  );
+}
 
 interface Props {
   session: SessionDetail;
@@ -30,10 +59,28 @@ export function SessionMeta({ session }: Props) {
         </h1>
         <div className="flex flex-wrap items-center gap-2">
           {session.needsAttention && <AttentionBadge />}
-          {session.isOpen && !session.needsAttention && (
+          {session.isAborted && !session.needsAttention && (
+            <span className="inline-flex items-center gap-1 text-xs text-gh-muted font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />
+              Aborted by user
+            </span>
+          )}
+          {session.isTaskComplete && !session.needsAttention && (
+            <span className="inline-flex items-center gap-1 text-xs text-gh-active font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-gh-active" />
+              Task complete
+            </span>
+          )}
+          {session.isWorking && !session.needsAttention && (
             <span className="inline-flex items-center gap-1 text-xs text-gh-active font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />
-              Active
+              Working
+            </span>
+          )}
+          {session.isIdle && !session.needsAttention && (
+            <span className="inline-flex items-center gap-1 text-xs text-gh-muted font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />
+              Idle
             </span>
           )}
           {!session.isOpen && (
@@ -44,39 +91,29 @@ export function SessionMeta({ session }: Props) {
         </div>
       </div>
 
-      {/* Meta pills */}
-      <div className="flex flex-wrap gap-3 mt-3 text-xs text-gh-muted">
+      {/* Meta bar: project on the left, branch + duration on the right */}
+      <div className="flex items-center mt-3 text-xs text-gh-muted">
         <span
-          className="flex items-center gap-1 font-mono truncate max-w-xs"
+          className="font-mono"
           title={session.projectPath}
         >
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-            <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9zm10.5-1V9h-8c-.356 0-.694.074-1 .208V2.5a1 1 0 011-1h8z" />
-          </svg>
-          {session.projectPath}
+          {session.projectPath.split('/').filter(Boolean).pop() ?? session.projectPath}
         </span>
 
-        {session.gitBranch && (
-          <span className="flex items-center gap-1 font-mono text-gh-accent">
+        <div className="ml-auto flex items-center gap-4">
+          {session.gitBranch && <CopyBranch branch={session.gitBranch} />}
+
+          <span className="flex items-center gap-1">
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-              <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.128a2.251 2.251 0 11-1.5 0V5.372a2.25 2.25 0 111.5 0v1.836A2.492 2.492 0 016 7h4a1 1 0 001-1v-.628A2.25 2.25 0 019.5 3.25zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zM3.5 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z" />
+              <path d="M8 0a8 8 0 110 16A8 8 0 018 0zM1.5 8a6.5 6.5 0 1013 0 6.5 6.5 0 00-13 0zm7-3.25v2.992l2.028 2.03a.75.75 0 01-1.06 1.06l-2.2-2.2a.75.75 0 01-.22-.53V4.75a.75.75 0 011.5 0z" />
             </svg>
-            {session.gitBranch}
+            {formatDuration(session.durationMs)}
           </span>
-        )}
 
-        <span className="flex items-center gap-1">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-            <path d="M1 5.25A2.25 2.25 0 013.25 3h9.5A2.25 2.25 0 0115 5.25v5.5A2.25 2.25 0 0112.75 13h-9.5A2.25 2.25 0 011 10.75v-5.5zm2.25-.75a.75.75 0 00-.75.75v5.5c0 .414.336.75.75.75h9.5a.75.75 0 00.75-.75v-5.5a.75.75 0 00-.75-.75h-9.5z" />
-          </svg>
-          {formatDuration(session.durationMs)}
-        </span>
-
-        {session.model && (
-          <span className="font-mono">{session.model}</span>
-        )}
-
-        <span>{session.messageCount} message{session.messageCount !== 1 ? 's' : ''}</span>
+          {session.model && (
+            <span className="font-mono">{session.model}</span>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SessionSummary } from '../../api/client.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
@@ -7,10 +8,35 @@ interface Props {
   session: SessionSummary;
 }
 
-function shortenPath(p: string): string {
-  const parts = p.split('/');
-  // Show last 2 path segments
-  return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : p;
+function lastPathSegment(p: string): string {
+  return p.split('/').filter(Boolean).pop() ?? p;
+}
+
+function CopyBranch({ branch }: { branch: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleClick(e: { stopPropagation(): void }) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(branch).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+  return (
+    <button
+      onClick={handleClick}
+      title="Copy branch name"
+      className="group flex items-center gap-1 text-gh-accent text-xs font-mono truncate max-w-[200px] hover:text-gh-accent/80"
+    >
+      <span className="truncate">{branch}</span>
+      <span className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        {copied ? '✓' : (
+          <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+            <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
+          </svg>
+        )}
+      </span>
+    </button>
+  );
 }
 
 export function SessionRow({ session }: Props) {
@@ -33,10 +59,28 @@ export function SessionRow({ session }: Props) {
           </span>
           <div className="flex items-center gap-2 flex-wrap">
             {session.needsAttention && <AttentionBadge />}
-            {session.isOpen && !session.needsAttention && (
+            {session.isAborted && !session.needsAttention && (
+              <span className="inline-flex items-center gap-1 text-xs text-gh-muted">
+                <span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />
+                Aborted by user
+              </span>
+            )}
+            {session.isTaskComplete && !session.needsAttention && (
               <span className="inline-flex items-center gap-1 text-xs text-gh-active">
                 <span className="w-1.5 h-1.5 rounded-full bg-gh-active" />
-                Active
+                Task complete
+              </span>
+            )}
+            {session.isWorking && !session.needsAttention && (
+              <span className="inline-flex items-center gap-1 text-xs text-gh-active">
+                <span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />
+                Working
+              </span>
+            )}
+            {session.isIdle && !session.needsAttention && (
+              <span className="inline-flex items-center gap-1 text-xs text-gh-muted">
+                <span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />
+                Idle
               </span>
             )}
             {!session.isOpen && (
@@ -50,16 +94,12 @@ export function SessionRow({ session }: Props) {
       <td className="py-3 px-4 hidden sm:table-cell">
         <div className="flex flex-col gap-0.5">
           <span
-            className="text-gh-muted text-xs font-mono truncate max-w-[200px]"
+            className="text-gh-muted text-xs font-mono"
             title={session.projectPath}
           >
-            {shortenPath(session.projectPath)}
+            {lastPathSegment(session.projectPath)}
           </span>
-          {session.gitBranch && (
-            <span className="text-gh-accent text-xs font-mono truncate max-w-[200px]">
-              {session.gitBranch}
-            </span>
-          )}
+          {session.gitBranch && <CopyBranch branch={session.gitBranch} />}
         </div>
       </td>
 
@@ -76,13 +116,6 @@ export function SessionRow({ session }: Props) {
           timestamp={session.lastActivityAt}
           className="text-gh-muted text-xs tabular-nums"
         />
-      </td>
-
-      {/* Messages */}
-      <td className="py-3 px-4 hidden md:table-cell text-right">
-        <span className="text-gh-muted text-xs tabular-nums">
-          {session.messageCount}
-        </span>
       </td>
 
       {/* Chevron */}

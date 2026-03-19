@@ -8,6 +8,10 @@ export interface SessionSummary {
   durationMs: number;
   isOpen: boolean;
   needsAttention: boolean;
+  isWorking: boolean;
+  isAborted: boolean;
+  isTaskComplete: boolean;
+  isIdle: boolean;
   messageCount: number;
   model?: string;
 }
@@ -19,11 +23,13 @@ export interface ToolRequest {
   type: string;
   toolTitle?: string;
   intentionSummary?: string;
+  result?: { content: string; detailedContent?: string };
+  error?: { message: string; code: string };
 }
 
 export interface ParsedMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'task_complete';
   content: string;
   toolRequests?: ToolRequest[];
   timestamp: string;

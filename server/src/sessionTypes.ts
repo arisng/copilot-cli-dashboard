@@ -45,6 +45,8 @@ export interface ToolRequest {
   type: string;
   toolTitle?: string;
   intentionSummary?: string;
+  result?: { content: string; detailedContent?: string };
+  error?: { message: string; code: string };
 }
 
 export interface ToolExecutionCompleteData {
@@ -73,7 +75,7 @@ export interface ShutdownData {
 // Parsed / normalised types used by the API
 export interface ParsedMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'task_complete';
   content: string;
   toolRequests?: ToolRequest[];
   timestamp: string;
@@ -88,8 +90,12 @@ export interface SessionSummary {
   startedAt: string;
   lastActivityAt: string;
   durationMs: number;
-  isOpen: boolean; // false if session.shutdown exists
-  needsAttention: boolean;
+  isOpen: boolean; // true if an inuse.*.lock file exists (process is running)
+  needsAttention: boolean; // open, pending tool execution waiting for user input
+  isWorking: boolean; // agent has an open turn in progress
+  isAborted: boolean; // last post-user-message action was abort (and agent didn't recover)
+  isTaskComplete: boolean; // last post-user-message action was session.task_complete
+  isIdle: boolean; // turn ended cleanly, waiting for next user message
   messageCount: number; // user messages only
   model?: string;
 }

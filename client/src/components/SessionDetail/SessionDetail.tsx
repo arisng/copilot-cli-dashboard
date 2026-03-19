@@ -1,4 +1,5 @@
 import { useParams } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 import { useSession } from '../../hooks/useSession.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
 import { SessionMeta } from './SessionMeta.tsx';
@@ -7,6 +8,11 @@ import { MessageBubble } from './MessageBubble.tsx';
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const { session, loading, error } = useSession(id ?? '');
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+  }, [session?.messages.length]);
 
   if (loading && !session) return <LoadingSpinner />;
 
@@ -34,6 +40,7 @@ export function SessionDetail() {
             {session.messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
+            <div ref={bottomRef} />
           </div>
         )}
       </div>

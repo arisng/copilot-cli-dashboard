@@ -6,12 +6,13 @@ import type {
   SessionStartData,
   UserMessageData,
   AssistantMessageData,
+  ToolExecutionCompleteData,
   ShutdownData,
   ParsedMessage,
   SessionSummary,
   SessionDetail,
 } from './sessionTypes.js';
-import { needsAttention } from './utils/needsAttention.js';
+import { needsAttention, lastSessionStatus } from './utils/needsAttention.js';
 
 const SESSIONS_BASE = path.join(os.homedir(), '.copilot', 'session-state');
 
@@ -37,6 +38,15 @@ function extractTitle(messages: ParsedMessage[]): string {
 function buildMessages(events: RawEvent[]): ParsedMessage[] {
   const messages: ParsedMessage[] = [];
 
+  // Pre-build a map of toolCallId → execution result/error
+  const toolResults = new Map<string, ToolExecutionCompleteData>();
+  for (const event of events) {
+    if (event.type === 'tool.execution_complete') {
+      const d = event.data as unknown as ToolExecutionCompleteData;
+      toolResults.set(d.toolCallId, d);
+    }
+  }
+
   for (const event of events) {
     if (event.type === 'user.message') {
       const data = event.data as unknown as UserMessageData;
@@ -49,13 +59,27 @@ function buildMessages(events: RawEvent[]): ParsedMessage[] {
       });
     } else if (event.type === 'assistant.message') {
       const data = event.data as unknown as AssistantMessageData;
+      const toolRequests = data.toolRequests?.map((tr) => {
+        const exec = toolResults.get(tr.toolCallId);
+        return exec
+          ? { ...tr, result: exec.result, error: exec.error }
+          : tr;
+      });
       messages.push({
         id: event.id,
         role: 'assistant',
         content: data.content,
-        toolRequests: data.toolRequests,
+        toolRequests,
         timestamp: event.timestamp,
         interactionId: data.interactionId,
+      });
+    } else if (event.type === 'session.task_complete') {
+      const data = event.data as unknown as { summary: string };
+      messages.push({
+        id: event.id,
+        role: 'task_complete',
+        content: data.summary,
+        timestamp: event.timestamp,
       });
     }
   }
@@ -67,25 +91,55 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
   const sessionDir = path.join(SESSIONS_BASE, sessionId);
   const eventsFile = path.join(sessionDir, 'events.jsonl');
 
-  if (!fs.existsSync(eventsFile)) return null;
+  const hasLockFile = fs
+    .readdirSync(sessionDir)
+    .some((f) => f.startsWith('inuse.') && f.endsWith('.lock'));
+  // Lock file is the source of truth: present = process is running, even if a
+  // prior run wrote a session.shutdown (e.g. a resumed session).
+  const isOpen = hasLockFile;
 
-  const events = parseEventsFile(eventsFile);
-  if (events.length === 0) return null;
+  const events = fs.existsSync(eventsFile) ? parseEventsFile(eventsFile) : [];
 
   const startEvent = events.find((e) => e.type === 'session.start');
   const shutdownEvent = events.find((e) => e.type === 'session.shutdown');
 
-  if (!startEvent) return null;
+  // Brand-new session: lock file exists but events not yet written — show as
+  // a placeholder so it appears immediately in the list.
+  if (events.length === 0 || !startEvent) {
+    if (!isOpen) return null;
+    const now = new Date().toISOString();
+    const stub: SessionDetail = {
+      id: sessionId,
+      title: 'New',
+      projectPath: 'Unknown',
+      gitBranch: null,
+      startedAt: now,
+      lastActivityAt: now,
+      durationMs: 0,
+      isOpen: true,
+      needsAttention: false,
+      isWorking: false,
+      isAborted: false,
+      isTaskComplete: false,
+      isIdle: true,
+      messageCount: 0,
+      messages: [],
+    };
+    return stub;
+  }
 
   const startData = startEvent.data as unknown as SessionStartData;
   const startedAt = startData.startTime ?? startEvent.timestamp;
-  const isOpen = !shutdownEvent;
 
   const messages = buildMessages(events);
   const lastActivityAt = events[events.length - 1]?.timestamp ?? startedAt;
 
   const shutdownData = shutdownEvent?.data as unknown as ShutdownData | undefined;
-  const model = shutdownData?.currentModel;
+  // Prefer the last model_change event (covers active sessions); fall back to shutdown metadata
+  const lastModelChange = [...events].reverse().find((e) => e.type === 'session.model_change');
+  const model =
+    (lastModelChange?.data as unknown as { newModel?: string } | undefined)?.newModel ??
+    shutdownData?.currentModel;
 
   const summary: SessionSummary = {
     id: sessionId,
@@ -96,7 +150,11 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
     lastActivityAt,
     durationMs: Date.parse(lastActivityAt) - Date.parse(startedAt),
     isOpen,
-    needsAttention: needsAttention(messages, lastActivityAt, isOpen),
+    needsAttention: needsAttention(events, isOpen),
+    isWorking: isOpen && lastSessionStatus(events) === 'working',
+    isAborted: isOpen && lastSessionStatus(events) === 'aborted',
+    isTaskComplete: isOpen && lastSessionStatus(events) === 'task_complete',
+    isIdle: isOpen && lastSessionStatus(events) === 'idle',
     messageCount: messages.filter((m) => m.role === 'user').length,
     model,
   };
