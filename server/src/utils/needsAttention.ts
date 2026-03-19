@@ -4,6 +4,13 @@ import type { RawEvent } from '../sessionTypes.js';
 // Long-running tools like bash (tests, builds) are just the agent working autonomously.
 const USER_INTERACTION_TOOLS = new Set(['ask_user', 'exit_plan_mode']);
 
+// MCP tools (mcp-* prefix) require explicit user approval before executing.
+// A pending mcp-* tool.execution_start with no matching complete means the user
+// is being shown a permission prompt in the terminal.
+function requiresUserApproval(toolName: string): boolean {
+  return USER_INTERACTION_TOOLS.has(toolName) || toolName.startsWith('mcp-');
+}
+
 function hasPendingUserInteraction(events: RawEvent[]): boolean {
   // Map toolCallId → toolName for started tools
   const started = new Map<string, string>();
@@ -23,7 +30,7 @@ function hasPendingUserInteraction(events: RawEvent[]): boolean {
   }
 
   return [...started.entries()].some(
-    ([id, name]) => !completed.has(id) && USER_INTERACTION_TOOLS.has(name)
+    ([id, name]) => !completed.has(id) && requiresUserApproval(name)
   );
 }
 
@@ -76,7 +83,7 @@ export function hasPendingWork(events: RawEvent[]): boolean {
   }
 
   return [...started.entries()].some(
-    ([id, name]) => !completed.has(id) && !USER_INTERACTION_TOOLS.has(name)
+    ([id, name]) => !completed.has(id) && !requiresUserApproval(name)
   );
 }
 
