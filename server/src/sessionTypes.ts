@@ -72,6 +72,12 @@ export interface ShutdownData {
   currentModel?: string;
 }
 
+export interface MessagePreview {
+  role: 'user' | 'assistant';
+  snippet: string;      // first 120 chars of content, stripped of XML tags
+  toolNames?: string[]; // names of tool calls in this message (assistant only)
+}
+
 // Parsed / normalised types used by the API
 export interface ParsedMessage {
   id: string;
@@ -110,6 +116,7 @@ export interface SessionSummary {
   activeSubAgents: ActiveSubAgent[];
   hasPlan: boolean; // plan.md exists in session directory
   isPlanPending: boolean; // exit_plan_mode has been called and is awaiting user approval
+  previewMessages?: MessagePreview[]; // last 2 messages (1 user + 1 assistant)
 }
 
 export interface TodoItem {

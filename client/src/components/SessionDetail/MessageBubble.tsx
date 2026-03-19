@@ -1,3 +1,4 @@
+import React from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -114,7 +115,16 @@ const AGENT_TYPE_LABELS: Record<string, string> = {
   'general-purpose':            'General',
   'Plan':                       'Plan',
   'claude-code-guide':          'Guide',
+  'code-review':                'Code Review',
+  'code-reviewer':              'Code Review',
 };
+
+const AGENT_TYPE_COLORS: Record<string, { dot: string; label: string; border: string; section: string; pulse: string }> = {
+  'code-review':   { dot: 'bg-sky-400',   label: 'text-sky-400',   border: 'border-sky-400/30',   section: 'text-sky-400/60',   pulse: 'bg-sky-400' },
+  'code-reviewer': { dot: 'bg-sky-400',   label: 'text-sky-400',   border: 'border-sky-400/30',   section: 'text-sky-400/60',   pulse: 'bg-sky-400' },
+};
+
+const DEFAULT_AGENT_COLORS = { dot: 'bg-green-400', label: 'text-green-400', border: 'border-green-400/30', section: 'text-green-400/60', pulse: 'bg-green-400' };
 
 
 function TaskBlock({ tool }: { tool: ToolRequest }) {
@@ -138,19 +148,21 @@ function TaskBlock({ tool }: { tool: ToolRequest }) {
   const result = tool.result?.detailedContent ?? tool.result?.content;
   const hasError = !!tool.error;
 
+  const agentType = rawArgs.agent_type as string | undefined;
   const agentLabel = isReadAgent
     ? 'Read'
-    : (rawArgs.agent_type ? (AGENT_TYPE_LABELS[rawArgs.agent_type as string] ?? rawArgs.agent_type as string) : 'Agent');
+    : (agentType ? (AGENT_TYPE_LABELS[agentType] ?? agentType) : 'Agent');
 
+  const colors = AGENT_TYPE_COLORS[agentType ?? ''] ?? DEFAULT_AGENT_COLORS;
   const isDone = !!result || hasError;
 
   return (
-    <details className={`rounded border ${hasError ? 'border-gh-attention/30' : 'border-green-400/30'} bg-gh-bg text-xs group`}>
+    <details className={`rounded border ${hasError ? 'border-gh-attention/30' : colors.border} bg-gh-bg text-xs group`}>
       <summary className="px-3 py-2 cursor-pointer list-none flex items-center gap-2 hover:bg-white/5 transition-colors">
-        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasError ? 'bg-gh-attention' : isDone ? 'bg-green-400' : 'bg-green-400 animate-pulse'}`} />
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasError ? 'bg-gh-attention' : isDone ? colors.dot : `${colors.pulse} animate-pulse`}`} />
 
         {/* Agent type badge */}
-        <span className={`font-mono font-medium text-xs px-1.5 py-0.5 rounded ${hasError ? 'text-gh-attention' : 'text-green-400'}`}
+        <span className={`font-mono font-medium text-xs px-1.5 py-0.5 rounded ${hasError ? 'text-gh-attention' : colors.label}`}
           style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
           {agentLabel}
         </span>
@@ -176,11 +188,11 @@ function TaskBlock({ tool }: { tool: ToolRequest }) {
         </svg>
       </summary>
 
-      <div className="border-t border-green-400/20 divide-y divide-gh-border/20">
+      <div className={`border-t ${colors.border} divide-y divide-gh-border/20`}>
         {/* Prompt */}
         {args.prompt && (
           <div>
-            <div className="px-3 py-1 text-green-400/60 text-xs font-medium uppercase tracking-wider border-b border-gh-border/30">
+            <div className={`px-3 py-1 ${colors.section} text-xs font-medium uppercase tracking-wider border-b border-gh-border/30`}>
               Prompt
             </div>
             <pre className="px-3 py-2 overflow-x-auto font-mono text-xs text-gh-muted whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
@@ -192,10 +204,136 @@ function TaskBlock({ tool }: { tool: ToolRequest }) {
         {/* Result */}
         {(result || hasError) && (
           <div>
-            <div className={`px-3 py-1 text-xs font-medium uppercase tracking-wider border-b border-gh-border/30 ${hasError ? 'text-gh-attention/60' : 'text-green-400/60'}`}>
+            <div className={`px-3 py-1 text-xs font-medium uppercase tracking-wider border-b border-gh-border/30 ${hasError ? 'text-gh-attention/60' : colors.section}`}>
               {hasError ? 'Error' : 'Result'}
             </div>
             <pre className={`px-3 py-2 overflow-x-auto font-mono text-xs whitespace-pre-wrap break-all ${hasError ? 'text-gh-attention' : 'text-gh-muted'}`}>
+              {hasError ? `${tool.error!.message} (${tool.error!.code})` : result}
+            </pre>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+// ── Atlassian (Confluence + Jira) ──────────────────────────────────────────
+
+const ATLASSIAN_META: Record<string, {
+  product: 'confluence' | 'jira';
+  action: string;
+  summary: (args: Record<string, unknown>) => string;
+}> = {
+  'mcp-atlassian-confluence_get_page':             { product: 'confluence', action: 'Get Page',             summary: (a) => String(a.page_id ?? '') },
+  'mcp-atlassian-confluence_get_page_children':    { product: 'confluence', action: 'Get Children',         summary: (a) => `parent ${a.parent_id}` },
+  'mcp-atlassian-confluence_create_page':          { product: 'confluence', action: 'Create Page',          summary: (a) => String(a.title ?? '') },
+  'mcp-atlassian-confluence_update_page':          { product: 'confluence', action: 'Update Page',          summary: (a) => String(a.title ?? a.page_id ?? '') },
+  'mcp-atlassian-confluence_search':               { product: 'confluence', action: 'Search',               summary: (a) => String(a.query ?? '') },
+  'mcp-atlassian-jira_get_issue':                  { product: 'jira',       action: 'Get Issue',            summary: (a) => String(a.issue_key ?? '') },
+  'mcp-atlassian-jira_get_issue_development_info': { product: 'jira',       action: 'Dev Info',             summary: (a) => String(a.issue_key ?? '') },
+  'mcp-atlassian-jira_get_issue_images':           { product: 'jira',       action: 'Issue Images',         summary: (a) => String(a.issue_key ?? '') },
+  'mcp-atlassian-jira_add_comment':                { product: 'jira',       action: 'Add Comment',          summary: (a) => String(a.issue_key ?? '') },
+  'mcp-atlassian-jira_download_attachments':       { product: 'jira',       action: 'Download Attachments', summary: (a) => String(a.issue_key ?? '') },
+  'mcp-atlassian-jira_search':                     { product: 'jira',       action: 'Search',               summary: (a) => String(a.jql ?? '') },
+};
+
+function AtlassianBlock({ tool }: { tool: ToolRequest }) {
+  const meta = ATLASSIAN_META[tool.name];
+  if (!meta) return <ToolCallBlock tool={tool} />;
+
+  const args = tool.arguments as Record<string, unknown>;
+  const isConfluence = meta.product === 'confluence';
+  const hasError = !!tool.error;
+  const result = tool.result?.detailedContent ?? tool.result?.content;
+  const summaryText = meta.summary(args);
+
+  const errorCode = tool.error?.code ?? '';
+  const isAborted = errorCode === 'rejected' || errorCode === 'denied' || errorCode === 'aborted';
+  const isDone = !!result || hasError;
+
+  // User feedback stripped from denied message e.g. "The user rejected this tool call. User feedback: ..."
+  const userFeedback = tool.error?.message.match(/User feedback:\s*(.+)/s)?.[1]?.trim();
+
+  // Colors: Confluence = blue, Jira = indigo, aborted = muted amber, error = red
+  const color = isConfluence
+    ? { dot: 'bg-blue-400',    label: 'text-blue-400',    border: 'border-blue-400/30',    badge: 'bg-blue-400/10 text-blue-400',    section: 'text-blue-400/60' }
+    : { dot: 'bg-indigo-400',  label: 'text-indigo-400',  border: 'border-indigo-400/30',  badge: 'bg-indigo-400/10 text-indigo-400', section: 'text-indigo-400/60' };
+  const abortedColor = { dot: 'bg-gh-muted',     label: 'text-gh-muted',     border: 'border-gh-border',         badge: 'bg-gh-muted/10 text-gh-muted',    section: 'text-gh-muted/60' };
+  const errorColor   = { dot: 'bg-gh-attention', label: 'text-gh-attention', border: 'border-gh-attention/30',   badge: 'bg-gh-attention/10 text-gh-attention', section: 'text-gh-attention/60' };
+
+  const c = isAborted ? abortedColor : hasError ? errorColor : color;
+
+  return (
+    <details className={`rounded border ${c.border} bg-gh-bg text-xs group`}>
+      <summary className="px-3 py-2 cursor-pointer list-none flex items-center gap-2 hover:bg-white/5 transition-colors">
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isDone || isAborted ? c.dot : `${c.dot} animate-pulse`}`} />
+
+        {/* Product badge */}
+        <span className={`font-medium text-xs px-1.5 py-0.5 rounded ${c.badge}`}>
+          {isConfluence ? 'Confluence' : 'Jira'}
+        </span>
+
+        {/* Action */}
+        <span className={`font-mono font-medium ${c.label}`}>{meta.action}</span>
+
+        {/* Key / title / query */}
+        {summaryText && (
+          <span className={`truncate ${isAborted ? 'text-gh-muted/60 line-through' : 'text-gh-muted'}`}>{summaryText}</span>
+        )}
+
+        {/* Aborted label */}
+        {isAborted && (
+          <span className="ml-auto shrink-0 text-gh-muted/50 italic">Aborted by user</span>
+        )}
+
+        {!isAborted && (
+          <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"
+            className="ml-auto flex-shrink-0 text-gh-muted/50 transition-transform group-open:rotate-90">
+            <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
+          </svg>
+        )}
+      </summary>
+
+      <div className={`border-t ${c.border} divide-y divide-gh-border/20`}>
+        {/* Key args shown as a compact property list */}
+        {(() => {
+          const displayArgs = Object.entries(args).filter(([k, v]) => k !== 'content' && v != null && String(v) !== '');
+          return displayArgs.length > 0 ? (
+            <div className="px-3 py-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              {displayArgs.map(([k, v]) => (
+                <React.Fragment key={k}>
+                  <span className={`${c.section} font-medium uppercase tracking-wide text-xs leading-5 whitespace-nowrap`}>{k.replace(/_/g, ' ')}</span>
+                  <span className="text-gh-muted font-mono text-xs leading-5 truncate">{String(v)}</span>
+                </React.Fragment>
+              ))}
+            </div>
+          ) : null;
+        })()}
+
+        {/* Content preview (collapsed) */}
+        {typeof args.content === 'string' && args.content && (
+          <div>
+            <div className={`px-3 py-1 ${c.section} text-xs font-medium uppercase tracking-wider border-b border-gh-border/30`}>Content</div>
+            <pre className="px-3 py-2 overflow-x-auto font-mono text-xs text-gh-muted whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+              {args.content.slice(0, 800)}{args.content.length > 800 ? '\n…' : ''}
+            </pre>
+          </div>
+        )}
+
+        {/* User feedback on denied calls */}
+        {isAborted && userFeedback && (
+          <div className="px-3 py-2 text-gh-muted/70 italic text-xs">
+            <span className="text-gh-muted/40 not-italic mr-1">Feedback:</span>{userFeedback}
+          </div>
+        )}
+
+        {/* Result / error */}
+        {(result || (hasError && !isAborted)) && (
+          <div>
+            <div className={`px-3 py-1 text-xs font-medium uppercase tracking-wider border-b border-gh-border/30 ${hasError ? 'text-gh-attention/60' : c.section}`}>
+              {hasError ? 'Error' : 'Result'}
+            </div>
+            <pre className={`px-3 py-2 overflow-x-auto font-mono text-xs whitespace-pre-wrap break-all max-h-64 overflow-y-auto ${hasError ? 'text-gh-attention' : 'text-gh-muted'}`}>
               {hasError ? `${tool.error!.message} (${tool.error!.code})` : result}
             </pre>
           </div>
@@ -521,7 +659,9 @@ export function MessageBubble({ message }: Props) {
                       ? <BashBlock key={tool.toolCallId} tool={tool} />
                       : (tool.name === 'task' || tool.name === 'task_complete' || tool.name === 'read_agent')
                         ? <TaskBlock key={tool.toolCallId} tool={tool} />
-                        : <ToolCallBlock key={tool.toolCallId} tool={tool} />
+                        : tool.name.startsWith('mcp-atlassian-')
+                          ? <AtlassianBlock key={tool.toolCallId} tool={tool} />
+                          : <ToolCallBlock key={tool.toolCallId} tool={tool} />
             )}
           </div>
         )}

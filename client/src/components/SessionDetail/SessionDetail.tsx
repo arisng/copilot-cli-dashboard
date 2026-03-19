@@ -213,6 +213,7 @@ interface Tab {
   isPlan?: boolean;
   isTodos?: boolean;
   agent?: ActiveSubAgent;
+  accentColor?: 'blue' | 'sky'; // blue = default sub-agent, sky = code-review
 }
 
 function TabBar({ tabs, activeId, onChange }: { tabs: Tab[]; activeId: string; onChange: (id: string) => void }) {
@@ -243,7 +244,9 @@ function TabBar({ tabs, activeId, onChange }: { tabs: Tab[]; activeId: string; o
               </svg>
             )}
             {tab.isSubAgent && (
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-gh-accent/15 text-gh-accent shrink-0">
+              <span className={`inline-flex items-center justify-center w-4 h-4 rounded shrink-0 ${
+                tab.accentColor === 'sky' ? 'bg-sky-400/15 text-sky-400' : 'bg-gh-accent/15 text-gh-accent'
+              }`}>
                 <svg viewBox="0 0 16 16" width="9" height="9" fill="currentColor">
                   <path d="M1.5 1.75a.25.25 0 01.25-.25h12.5a.25.25 0 010 .5H1.75a.25.25 0 01-.25-.25zM1.5 8a.25.25 0 01.25-.25h12.5a.25.25 0 010 .5H1.75A.25.25 0 011.5 8zm.25 5.75a.25.25 0 000 .5h12.5a.25.25 0 000-.5H1.75z"/>
                 </svg>
@@ -316,15 +319,21 @@ export function SessionDetail() {
     { id: 'main',  label: 'Main',  isSubAgent: false },
     ...(hasPlan  ? [{ id: 'plan',  label: 'Plan',  isSubAgent: false, isPlan: session.isPlanPending }] : []),
     ...(hasTodos ? [{ id: 'todos', label: 'Todos', isSubAgent: false, isTodos: true }] : []),
-    ...subAgents.map((a) => ({
-      id: a.toolCallId,
-      label: a.agentName === 'read_agent'
+    ...subAgents.map((a) => {
+      const isCodeReview = a.agentName === 'code-review' || a.agentName === 'code-reviewer';
+      const isRead = a.agentName === 'read_agent';
+      const label = isRead
         ? `Read · ${a.agentDisplayName || a.description || 'Agent'}`
-        : (a.agentDisplayName || a.agentName),
-      isCompleted: a.isCompleted,
-      isSubAgent: true,
-      agent: a,
-    })),
+        : (a.agentDisplayName || a.agentName);
+      return {
+        id: a.toolCallId,
+        label,
+        isCompleted: a.isCompleted,
+        isSubAgent: true,
+        agent: a,
+        accentColor: isCodeReview ? ('sky' as const) : ('blue' as const),
+      };
+    }),
   ];
 
   const activeAgent    = tabs.find((t) => t.id === activeTab)?.agent;

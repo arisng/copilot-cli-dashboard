@@ -10,8 +10,10 @@ A local web dashboard for [Copilot CLI](https://github.com/github/copilot-cli) t
 
 ### Session monitoring
 - **Live session list** — all active Copilot CLI sessions with real-time status badges
+- **List / grid toggle** — switch between a compact table view and a bento-style card grid; choice persists across reloads
 - **Desktop notifications** — browser push alert when any session needs your attention or completes a task, even with the tab in the background
 
+**List view**
 ```
 ┌─────────────────────────────────────────────────┐
 │ ● Search for Apigee gateway documentation       │  ← 🟡 needs attention
@@ -36,6 +38,21 @@ A local web dashboard for [Copilot CLI](https://github.com/github/copilot-cli) t
 │   k8s-tools · feature/executor · 3h · 2 msgs   │
 │   [Aborted]                                     │
 └─────────────────────────────────────────────────┘
+```
+
+**Grid view** — each card shows a preview of the last message as a chat bubble, color-coded tool chips, and active sub-agent badges:
+```
+┌─────────────────────────────┐  ┌─────────────────────────────┐
+│ Search for Apigee docs      │  │ Implement REST client        │
+│ copiloting-agents · main    │  │ one-web · feature/rest · 41m │
+│ · 23m · [Plan review]       │  │ · [Working]                  │
+│─────────────────────────────│  │─────────────────────────────│
+│ C  "Here is the evaluation  │  │ C  ┌─────────────────────┐  │
+│    plan I've drafted…"      │  │    │ • bash  • edit ×3   │  │
+│─────────────────────────────│  │    └─────────────────────┘  │
+│ ≡ Read · explore-cmt   2m   │  │─────────────────────────────│
+└─────────────────────────────┘  │ ● Explore   just now        │
+                                  └─────────────────────────────┘
 ```
 
 ### Conversation & tool calls

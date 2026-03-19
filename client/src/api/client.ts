@@ -1,3 +1,9 @@
+export interface MessagePreview {
+  role: 'user' | 'assistant';
+  snippet: string;
+  toolNames?: string[];
+}
+
 export interface ActiveSubAgent {
   toolCallId: string;
   agentName: string;
@@ -26,6 +32,7 @@ export interface SessionSummary {
   activeSubAgents: ActiveSubAgent[];
   hasPlan: boolean;
   isPlanPending: boolean;
+  previewMessages?: MessagePreview[];
 }
 
 export interface ToolRequest {

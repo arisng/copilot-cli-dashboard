@@ -10,6 +10,7 @@ import type {
   ToolExecutionCompleteData,
   ShutdownData,
   ParsedMessage,
+  MessagePreview,
   SessionSummary,
   SessionDetail,
   ActiveSubAgent,
@@ -38,7 +39,9 @@ function extractTitle(messages: ParsedMessage[]): string {
   return text.length > 80 ? text.slice(0, 77) + '…' : text;
 }
 
-function buildMessagesFromEvents(events: RawEvent[], parentToolCallId?: string): ParsedMessage[] {
+const ABORTED_ERROR = { message: 'Operation aborted by user', code: 'aborted' } as const;
+
+function buildMessagesFromEvents(events: RawEvent[], parentToolCallId?: string, isOpen = true): ParsedMessage[] {
   const messages: ParsedMessage[] = [];
 
   // Pre-build a map of toolCallId → execution result/error scoped to this thread
@@ -70,9 +73,10 @@ function buildMessagesFromEvents(events: RawEvent[], parentToolCallId?: string):
       const data = event.data as unknown as AssistantMessageData;
       const toolRequests = data.toolRequests?.map((tr) => {
         const exec = toolResults.get(tr.toolCallId);
-        return exec
-          ? { ...tr, result: exec.result, error: exec.error }
-          : tr;
+        if (exec) return { ...tr, result: exec.result, error: exec.error };
+        // Session closed with no completion event → tool was aborted
+        if (!isOpen) return { ...tr, error: ABORTED_ERROR };
+        return tr;
       });
       messages.push({
         id: event.id,
@@ -99,11 +103,11 @@ function buildMessagesFromEvents(events: RawEvent[], parentToolCallId?: string):
   return messages;
 }
 
-function buildMessages(events: RawEvent[]): ParsedMessage[] {
-  return buildMessagesFromEvents(events, undefined);
+function buildMessages(events: RawEvent[], isOpen: boolean): ParsedMessage[] {
+  return buildMessagesFromEvents(events, undefined, isOpen);
 }
 
-function buildSubAgentMessages(events: RawEvent[], agents: ActiveSubAgent[]): Record<string, ParsedMessage[]> {
+function buildSubAgentMessages(events: RawEvent[], agents: ActiveSubAgent[], isOpen: boolean): Record<string, ParsedMessage[]> {
   const result: Record<string, ParsedMessage[]> = {};
 
   // Build a lookup of read_agent completions for synthesizing messages
@@ -131,7 +135,7 @@ function buildSubAgentMessages(events: RawEvent[], agents: ActiveSubAgent[]): Re
         : [];
     } else {
       // task-based sub-agents: filter events by parentToolCallId
-      result[agent.toolCallId] = buildMessagesFromEvents(events, agent.toolCallId);
+      result[agent.toolCallId] = buildMessagesFromEvents(events, agent.toolCallId, isOpen);
     }
   }
   return result;
@@ -224,6 +228,16 @@ function readTodos(sessionDir: string): TodoItem[] | undefined {
   }
 }
 
+function buildPreviewMessages(messages: ParsedMessage[]): MessagePreview[] {
+  const visible = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+  const last2 = visible.slice(-2);
+  return last2.map((m) => ({
+    role: m.role as 'user' | 'assistant',
+    snippet: m.content.replace(/<[^>]+>/g, '').trim().slice(0, 120),
+    ...(m.toolRequests?.length ? { toolNames: m.toolRequests.map((t) => t.name) } : {}),
+  }));
+}
+
 export function parseSessionDir(sessionId: string): SessionDetail | null {
   const sessionDir = path.join(SESSIONS_BASE, sessionId);
   const eventsFile = path.join(sessionDir, 'events.jsonl');
@@ -272,7 +286,7 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
   const startData = startEvent.data as unknown as SessionStartData;
   const startedAt = startData.startTime ?? startEvent.timestamp;
 
-  const messages = buildMessages(events);
+  const messages = buildMessages(events, isOpen);
   const lastActivityAt = events[events.length - 1]?.timestamp ?? startedAt;
 
   const shutdownData = shutdownEvent?.data as unknown as ShutdownData | undefined;
@@ -283,7 +297,7 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
     shutdownData?.currentModel;
 
   const activeSubAgents = buildActiveSubAgents(events);
-  const subAgentMessages = buildSubAgentMessages(events, activeSubAgents);
+  const subAgentMessages = buildSubAgentMessages(events, activeSubAgents, isOpen);
 
   const planFile = path.join(sessionDir, 'plan.md');
   const hasPlan = fs.existsSync(planFile);
@@ -309,6 +323,7 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
     activeSubAgents,
     hasPlan,
     isPlanPending,
+    previewMessages: buildPreviewMessages(messages),
   };
 
   const todos = readTodos(sessionDir);
