@@ -6,6 +6,10 @@ A local web dashboard for [Copilot CLI](https://github.com/github/copilot-cli) t
 
 **Keywords:** agentic coding dashboard · Copilot CLI UI · AI coding agent monitor · multi-agent orchestration viewer · Claude Code sessions UI · LLM agent task tracker · sub-agent workflow visualization · AI pair programming dashboard
 
+<img width="1911" height="934" alt="Screenshot 2026-03-19 at 18 22 24" src="https://github.com/user-attachments/assets/b1d6a93a-8e06-4d98-940b-eece7f47574f" />
+
+<img width="1911" height="932" alt="Screenshot 2026-03-19 at 18 21 45" src="https://github.com/user-attachments/assets/6ce86d56-bd4c-437c-9eb9-d8789d27b049" />
+
 ## Features
 
 ### Session monitoring
