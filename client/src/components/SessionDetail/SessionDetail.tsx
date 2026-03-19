@@ -117,11 +117,17 @@ function PlanView({ content, isPending }: { content: string; isPending: boolean 
 // ── Todos view ─────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; text: string }> = {
-  completed:   { label: 'Done',        dot: 'bg-gh-active',     text: 'text-gh-active' },
+  completed:   { label: 'Done',        dot: 'bg-gh-active',              text: 'text-gh-active' },
+  done:        { label: 'Done',        dot: 'bg-gh-active',              text: 'text-gh-active' },
   in_progress: { label: 'In progress', dot: 'bg-gh-accent animate-pulse', text: 'text-gh-accent' },
-  pending:     { label: 'Pending',     dot: 'bg-gh-muted',      text: 'text-gh-muted' },
-  cancelled:   { label: 'Cancelled',   dot: 'bg-gh-attention',  text: 'text-gh-attention' },
+  pending:     { label: 'Pending',     dot: 'bg-gh-muted',               text: 'text-gh-muted' },
+  cancelled:   { label: 'Cancelled',   dot: 'bg-gh-attention',           text: 'text-gh-attention' },
+  blocked:     { label: 'Blocked',     dot: 'bg-gh-attention',           text: 'text-gh-attention' },
 };
+
+function isDone(status: string) {
+  return status === 'done' || status === 'completed' || status === 'cancelled';
+}
 
 function TodosView({ todos }: { todos: TodoItem[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -130,9 +136,11 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
 
   const pending   = todos.filter((t) => t.status === 'pending');
   const active    = todos.filter((t) => t.status === 'in_progress');
-  const done      = todos.filter((t) => t.status === 'completed' || t.status === 'cancelled');
+  const blocked   = todos.filter((t) => t.status === 'blocked');
+  const done      = todos.filter((t) => isDone(t.status));
   const groups = [
     { label: 'In progress', items: active,  accent: 'text-gh-accent' },
+    { label: 'Blocked',     items: blocked, accent: 'text-gh-attention' },
     { label: 'Pending',     items: pending, accent: 'text-gh-muted' },
     { label: 'Done',        items: done,    accent: 'text-gh-muted' },
   ].filter((g) => g.items.length > 0);
@@ -188,7 +196,7 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
           </div>
         </div>
       ))}
-      {todos.length === 0 && (
+      {groups.length === 0 && (
         <p className="text-center text-gh-muted text-sm py-8">No todos yet.</p>
       )}
     </div>

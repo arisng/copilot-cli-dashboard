@@ -138,66 +138,51 @@ function buildSubAgentMessages(events: RawEvent[], agents: ActiveSubAgent[]): Re
 }
 
 function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
-  // Collect sub-agent lifecycle events from the current interaction only
-  // (reset on each user.message so stale sub-agents don't linger)
+  // Accumulate all sub-agents across the entire session (never reset).
+  // Each toolCallId is unique, so no duplicates.
   const started = new Map<string, { agentName: string; agentDisplayName: string; sessionId?: string }>();
   const completed = new Set<string>();
-  // Map toolCallId → description from task/read_agent calls
   const descriptions = new Map<string, string>();
-
-  let currentStarted = new Map<string, { agentName: string; agentDisplayName: string; sessionId?: string }>();
-  let currentCompleted = new Set<string>();
-  let currentDescriptions = new Map<string, string>();
   // track read_agent toolCallIds so we can detect their completion via tool.execution_complete
-  let currentReadAgentIds = new Set<string>();
+  const readAgentIds = new Set<string>();
 
   for (const event of events) {
     const isSubEvent = !!(event.data as Record<string, unknown>).parentToolCallId;
+    if (isSubEvent) continue;
 
-    if (event.type === 'user.message' && !isSubEvent) {
-      // Reset per interaction (root messages only)
-      currentStarted = new Map();
-      currentCompleted = new Set();
-      currentDescriptions = new Map();
-      currentReadAgentIds = new Set();
-    } else if (event.type === 'assistant.message' && !isSubEvent) {
+    if (event.type === 'assistant.message') {
       const data = event.data as unknown as AssistantMessageData;
       for (const tr of data.toolRequests ?? []) {
         if (tr.name === 'task' || tr.name === 'task_complete') {
           const args = tr.arguments as { description?: string };
-          if (args.description) currentDescriptions.set(tr.toolCallId, args.description);
+          if (args.description) descriptions.set(tr.toolCallId, args.description);
         }
       }
     } else if (event.type === 'subagent.started') {
       const d = event.data as { toolCallId: string; agentName: string; agentDisplayName: string; sessionId?: string };
-      currentStarted.set(d.toolCallId, { agentName: d.agentName, agentDisplayName: d.agentDisplayName, sessionId: d.sessionId });
+      started.set(d.toolCallId, { agentName: d.agentName, agentDisplayName: d.agentDisplayName, sessionId: d.sessionId });
     } else if (event.type === 'subagent.completed' || event.type === 'subagent.failed') {
       const d = event.data as { toolCallId: string };
-      currentCompleted.add(d.toolCallId);
-    } else if (event.type === 'tool.execution_start' && !isSubEvent) {
+      completed.add(d.toolCallId);
+    } else if (event.type === 'tool.execution_start') {
       // read_agent calls spawn async agents without subagent.started events
       const d = event.data as { toolCallId: string; toolName: string; arguments: Record<string, unknown> };
       if (d.toolName === 'read_agent') {
         const agentId = d.arguments?.agent_id as string | undefined;
-        currentReadAgentIds.add(d.toolCallId);
-        currentStarted.set(d.toolCallId, {
+        readAgentIds.add(d.toolCallId);
+        started.set(d.toolCallId, {
           agentName: 'read_agent',
           agentDisplayName: agentId ?? 'Read Agent',
         });
-        if (agentId) currentDescriptions.set(d.toolCallId, agentId);
+        if (agentId) descriptions.set(d.toolCallId, agentId);
       }
-    } else if (event.type === 'tool.execution_complete' && !isSubEvent) {
+    } else if (event.type === 'tool.execution_complete') {
       const d = event.data as { toolCallId: string };
-      if (currentReadAgentIds.has(d.toolCallId)) {
-        currentCompleted.add(d.toolCallId);
+      if (readAgentIds.has(d.toolCallId)) {
+        completed.add(d.toolCallId);
       }
     }
   }
-
-  // Copy final state
-  for (const [id, v] of currentStarted) started.set(id, v);
-  for (const id of currentCompleted) completed.add(id);
-  for (const [id, v] of currentDescriptions) descriptions.set(id, v);
 
   return [...started.entries()].map(([toolCallId, { agentName, agentDisplayName, sessionId }]) => ({
     toolCallId,

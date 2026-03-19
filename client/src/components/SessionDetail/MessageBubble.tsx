@@ -17,6 +17,7 @@ const TOOL_STYLES: Record<string, { dot: string; label: string; border: string }
   write:         { dot: 'bg-orange-400', label: 'text-orange-400', border: 'border-orange-400/30' },
   task:          { dot: 'bg-green-400',  label: 'text-green-400',  border: 'border-green-400/30' },
   task_complete: { dot: 'bg-green-400',  label: 'text-green-400',  border: 'border-green-400/30' },
+  read_agent:    { dot: 'bg-green-400',  label: 'text-green-400',  border: 'border-green-400/30' },
   ask_user:      { dot: 'bg-pink-400',   label: 'text-pink-400',   border: 'border-pink-400/30' },
   report_intent: { dot: 'bg-gray-400',   label: 'text-gray-400',   border: 'border-gray-400/30' },
 };
@@ -115,18 +116,32 @@ const AGENT_TYPE_LABELS: Record<string, string> = {
   'claude-code-guide':          'Guide',
 };
 
+
 function TaskBlock({ tool }: { tool: ToolRequest }) {
+  const isReadAgent = tool.name === 'read_agent';
   const args = tool.arguments as {
+    // task args
     agent_type?: string;
-    description?: string;
+    taskDescription?: string;
     prompt?: string;
     mode?: string;
+    // read_agent args
+    agent_id?: string;
+    wait?: boolean;
   };
+  // normalise: task uses args.description, read_agent uses args.agent_id
+  const rawArgs = tool.arguments as Record<string, unknown>;
+  const agentDescription: string | undefined = isReadAgent
+    ? (args.agent_id)
+    : (rawArgs.description as string | undefined);
+
   const result = tool.result?.detailedContent ?? tool.result?.content;
   const hasError = !!tool.error;
-  const agentLabel = args.agent_type
-    ? (AGENT_TYPE_LABELS[args.agent_type] ?? args.agent_type)
-    : 'Agent';
+
+  const agentLabel = isReadAgent
+    ? 'Read'
+    : (rawArgs.agent_type ? (AGENT_TYPE_LABELS[rawArgs.agent_type as string] ?? rawArgs.agent_type as string) : 'Agent');
+
   const isDone = !!result || hasError;
 
   return (
@@ -140,9 +155,14 @@ function TaskBlock({ tool }: { tool: ToolRequest }) {
           {agentLabel}
         </span>
 
-        {/* Description */}
-        {args.description && (
-          <span className="text-gh-muted truncate">{args.description}</span>
+        {/* Sub-agent indicator */}
+        {(isReadAgent || tool.name === 'task') && (
+          <span className="text-xs text-gh-muted/50 font-mono">sub-agent</span>
+        )}
+
+        {/* Description / agent_id */}
+        {agentDescription && (
+          <span className="text-gh-muted truncate">{agentDescription}</span>
         )}
 
         {/* Mode badge */}
@@ -182,6 +202,17 @@ function TaskBlock({ tool }: { tool: ToolRequest }) {
         )}
       </div>
     </details>
+  );
+}
+
+function ReportIntentBlock({ tool }: { tool: ToolRequest }) {
+  const args = tool.arguments as { intent?: string };
+  if (!args.intent) return null;
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-gray-400/20 bg-gh-bg text-xs text-gh-muted">
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-400/60" />
+      <span className="italic">{args.intent}</span>
+    </div>
   );
 }
 
@@ -482,13 +513,15 @@ export function MessageBubble({ message }: Props) {
             {message.toolRequests.map((tool) =>
               tool.name === 'ask_user'
                 ? <AskUserBlock key={tool.toolCallId} tool={tool} />
-                : tool.name === 'edit'
-                  ? <EditBlock key={tool.toolCallId} tool={tool} />
-                  : tool.name === 'bash'
-                    ? <BashBlock key={tool.toolCallId} tool={tool} />
-                    : (tool.name === 'task' || tool.name === 'task_complete')
-                      ? <TaskBlock key={tool.toolCallId} tool={tool} />
-                      : <ToolCallBlock key={tool.toolCallId} tool={tool} />
+                : tool.name === 'report_intent'
+                  ? <ReportIntentBlock key={tool.toolCallId} tool={tool} />
+                  : tool.name === 'edit'
+                    ? <EditBlock key={tool.toolCallId} tool={tool} />
+                    : tool.name === 'bash'
+                      ? <BashBlock key={tool.toolCallId} tool={tool} />
+                      : (tool.name === 'task' || tool.name === 'task_complete' || tool.name === 'read_agent')
+                        ? <TaskBlock key={tool.toolCallId} tool={tool} />
+                        : <ToolCallBlock key={tool.toolCallId} tool={tool} />
             )}
           </div>
         )}
