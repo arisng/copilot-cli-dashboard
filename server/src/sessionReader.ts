@@ -82,6 +82,7 @@ function buildMessagesFromEvents(events: RawEvent[], parentToolCallId?: string, 
         id: event.id,
         role: 'assistant',
         content: data.content,
+        reasoning: data.reasoningText,
         toolRequests,
         timestamp: event.timestamp,
         interactionId: data.interactionId,
@@ -342,7 +343,7 @@ export function listAllSessions(): SessionSummary[] {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const detail = parseSessionDir(entry.name);
-    if (detail) {
+    if (detail && detail.messageCount > 0) {
       const { messages: _msgs, ...summary } = detail;
       sessions.push(summary);
     }

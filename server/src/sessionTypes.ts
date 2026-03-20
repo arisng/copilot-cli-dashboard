@@ -36,6 +36,7 @@ export interface AssistantMessageData {
   toolRequests?: ToolRequest[];
   interactionId: string;
   outputTokens?: number;
+  reasoningText?: string;
 }
 
 export interface ToolRequest {
@@ -83,6 +84,7 @@ export interface ParsedMessage {
   id: string;
   role: 'user' | 'assistant' | 'task_complete';
   content: string;
+  reasoning?: string;
   toolRequests?: ToolRequest[];
   timestamp: string;
   interactionId?: string;

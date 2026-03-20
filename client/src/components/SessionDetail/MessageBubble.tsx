@@ -429,6 +429,26 @@ function FigmaBlock({ tool }: { tool: ToolRequest }) {
   );
 }
 
+function ReasoningBlock({ text }: { text: string }) {
+  return (
+    <details className="rounded border border-amber-400/20 bg-amber-400/5 text-xs group mb-2">
+      <summary className="px-3 py-2 cursor-pointer list-none flex items-center gap-2 hover:bg-amber-400/5 transition-colors">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="text-amber-400/70 flex-shrink-0">
+          <path d="M8 1a7 7 0 100 14A7 7 0 008 1zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3H7v-1.5h2V11zm0-3H7c0-2.5 3-2.5 3-4a2 2 0 10-4 0H4a4 4 0 118 0c0 2.3-3 2.5-3 4z"/>
+        </svg>
+        <span className="text-amber-400/70 font-medium uppercase tracking-wider text-xs">Thinking</span>
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"
+          className="ml-auto flex-shrink-0 text-amber-400/40 transition-transform group-open:rotate-90">
+          <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
+        </svg>
+      </summary>
+      <div className="border-t border-amber-400/15 px-3 py-2.5">
+        <p className="text-amber-200/60 text-xs leading-relaxed whitespace-pre-wrap italic">{text}</p>
+      </div>
+    </details>
+  );
+}
+
 function ReportIntentBlock({ tool }: { tool: ToolRequest }) {
   const args = tool.arguments as { intent?: string };
   if (!args.intent) return null;
@@ -674,6 +694,7 @@ export function MessageBubble({ message }: Props) {
 
       <div className="flex-1 min-w-0 flex flex-col gap-2">
       <div className="rounded-xl px-5 py-3 text-sm bg-gh-surface border border-gh-border text-gh-text min-w-0">
+        {message.reasoning && <ReasoningBlock text={message.reasoning} />}
         {message.content.trim() ? (
           <div className="prose prose-invert prose-sm max-w-none text-gh-text
             [&_p]:my-2 [&_p]:leading-relaxed

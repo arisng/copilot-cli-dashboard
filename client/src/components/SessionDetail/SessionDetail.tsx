@@ -1,13 +1,15 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
 import { useSession } from '../../hooks/useSession.ts';
+import { useSessions } from '../../hooks/useSessions.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
 import { SessionMeta } from './SessionMeta.tsx';
 import { MessageBubble } from './MessageBubble.tsx';
-import type { ActiveSubAgent, ParsedMessage, TodoItem } from '../../api/client.ts';
+import { RelativeTime } from '../shared/RelativeTime.tsx';
+import type { ActiveSubAgent, ParsedMessage, SessionSummary, TodoItem } from '../../api/client.ts';
 
 // ── Plan markdown components ───────────────────────────────────────────────
 
@@ -107,7 +109,7 @@ function PlanView({ content, isPending }: { content: string; isPending: boolean 
           <span className="text-gh-attention/70 text-xs">· Review the plan below and approve or reject it in your terminal</span>
         </div>
       )}
-      <div className="p-6 max-h-[calc(100vh-360px)] overflow-y-auto">
+      <div className="p-6 overflow-y-auto max-h-[calc(100vh-280px)]">
         <Markdown remarkPlugins={[remarkGfm]} components={planComponents}>{content}</Markdown>
       </div>
     </div>
@@ -146,7 +148,7 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
   ].filter((g) => g.items.length > 0);
 
   return (
-    <div className="p-4 max-h-[calc(100vh-360px)] overflow-y-auto space-y-4">
+    <div className="p-4 overflow-y-auto max-h-[calc(100vh-280px)] space-y-4">
       {groups.map((group) => (
         <div key={group.label}>
           <p className={`text-xs font-medium uppercase tracking-wide mb-2 ${group.accent}`}>
@@ -271,10 +273,11 @@ function TabBar({ tabs, activeId, onChange }: { tabs: Tab[]; activeId: string; o
 // ── Message list ───────────────────────────────────────────────────────────
 
 function MessageList({ messages, maxHeight }: { messages: ParsedMessage[]; maxHeight: string }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   if (messages.length === 0) {
@@ -282,9 +285,95 @@ function MessageList({ messages, maxHeight }: { messages: ParsedMessage[]; maxHe
   }
 
   return (
-    <div className="p-4 space-y-4 overflow-y-auto" style={{ maxHeight }}>
+    <div ref={containerRef} className="p-4 space-y-4 overflow-y-auto" style={{ maxHeight }}>
       {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
-      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+// ── Sessions sidebar ───────────────────────────────────────────────────────
+
+function SessionSidebar({ currentId, sessions }: { currentId: string; sessions: SessionSummary[] }) {
+  const navigate = useNavigate();
+
+  function statusDot(s: SessionSummary) {
+    if (s.needsAttention) return 'bg-gh-attention animate-pulse';
+    if (s.isWorking)      return 'bg-gh-active animate-pulse';
+    if (s.isTaskComplete) return 'bg-gh-active';
+    if (s.isAborted)      return 'bg-red-500';
+    return 'bg-gh-muted/40';
+  }
+
+  const byDate = (a: SessionSummary, b: SessionSummary) =>
+    Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt);
+
+  const open   = sessions.filter((s) => s.isOpen).sort(byDate);
+  const closed = sessions.filter((s) => !s.isOpen).sort(byDate);
+
+  function SessionItem({ s }: { s: SessionSummary }) {
+    const isCurrent = s.id === currentId;
+    return (
+      <button
+        key={s.id}
+        onClick={() => navigate(`/sessions/${s.id}`)}
+        className={`w-full px-3 py-2.5 text-left flex items-start gap-2 transition-colors hover:bg-gh-surface/60
+          ${isCurrent ? 'bg-gh-surface border-l-2 border-gh-accent' : 'border-l-2 border-transparent'}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${statusDot(s)}`} />
+        <div className="min-w-0 flex-1">
+          <p className={`text-xs font-medium truncate leading-snug ${isCurrent ? 'text-gh-text' : 'text-gh-muted'}`}>
+            {s.title}
+          </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-xs text-gh-muted/50 truncate">{s.projectPath?.split('/').pop()}</span>
+            <span className="text-gh-muted/30 shrink-0">·</span>
+            <RelativeTime timestamp={s.lastActivityAt} className="text-xs text-gh-muted/50 shrink-0" />
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-60 shrink-0 sticky top-20 self-start">
+      <div className="rounded-lg border border-gh-border overflow-hidden">
+        <div className="px-3 py-2 border-b border-gh-border bg-gh-surface flex items-center justify-between">
+          <span className="text-xs font-medium text-gh-muted uppercase tracking-wider">Sessions</span>
+          <span className="text-xs text-gh-muted/60">{sessions.length}</span>
+        </div>
+        <div className="overflow-y-auto max-h-[calc(100vh-140px)]">
+          {/* Open sessions */}
+          {open.length > 0 && (
+            <div className="bg-gh-active/5 border-b border-gh-active/20"
+              style={{ boxShadow: 'inset 0 0 12px 0 rgba(63,185,80,0.06)' }}>
+              <div className="px-3 py-1.5 flex items-center gap-1.5 border-b border-gh-active/15">
+                <span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />
+                <span className="text-xs font-medium text-gh-active/80">Open · {open.length}</span>
+              </div>
+              <div className="divide-y divide-gh-active/10">
+                {open.map((s) => <SessionItem key={s.id} s={s} />)}
+              </div>
+            </div>
+          )}
+
+          {/* Closed sessions */}
+          {closed.length > 0 && (
+            <div className="bg-gh-bg">
+              <div className="px-3 py-1.5 flex items-center gap-1.5 border-b border-gh-border/40 bg-gh-surface/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-gh-muted/30" />
+                <span className="text-xs font-medium text-gh-muted/50">Closed · {closed.length}</span>
+              </div>
+              <div className="divide-y divide-gh-border/20 opacity-70">
+                {closed.map((s) => <SessionItem key={s.id} s={s} />)}
+              </div>
+            </div>
+          )}
+
+          {sessions.length === 0 && (
+            <p className="px-3 py-6 text-xs text-gh-muted text-center">No sessions</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -294,6 +383,7 @@ function MessageList({ messages, maxHeight }: { messages: ParsedMessage[]; maxHe
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const { session, loading, error } = useSession(id ?? '');
+  const { sessions } = useSessions();
   const [activeTab, setActiveTab] = useState('main');
 
   useEffect(() => { setActiveTab('main'); }, [id]);
@@ -342,46 +432,49 @@ export function SessionDetail() {
     : (session.subAgentMessages?.[activeTab] ?? []);
 
   return (
-    <div>
-      <SessionMeta session={session} />
+    <div className="flex gap-4 items-start">
+      <div className="flex-1 min-w-0">
+        <SessionMeta session={session} />
 
-      <div className="rounded-lg border border-gh-border overflow-hidden">
-        {hasTabs && <TabBar tabs={tabs} activeId={activeTab} onChange={setActiveTab} />}
+        <div className="rounded-lg border border-gh-border overflow-hidden">
+          {hasTabs && <TabBar tabs={tabs} activeId={activeTab} onChange={setActiveTab} />}
 
-        {/* Plan */}
-        {activeTab === 'plan' && session.planContent && (
-          <PlanView content={session.planContent} isPending={session.isPlanPending} />
-        )}
+          {/* Plan */}
+          {activeTab === 'plan' && session.planContent && (
+            <PlanView content={session.planContent} isPending={session.isPlanPending} />
+          )}
 
-        {/* Todos */}
-        {activeTab === 'todos' && session.todos && (
-          <TodosView todos={session.todos} />
-        )}
+          {/* Todos */}
+          {activeTab === 'todos' && session.todos && (
+            <TodosView todos={session.todos} />
+          )}
 
-        {/* Sub-agent context bar */}
-        {activeTab !== 'plan' && activeTab !== 'todos' && activeAgent && (
-          <div className="px-4 py-2 border-b border-gh-border bg-gh-surface/50 flex items-center gap-2 text-xs">
-            <span className="text-gh-muted">Sub-agent</span>
-            <span className="font-mono text-gh-text font-medium">{activeAgent.agentDisplayName || activeAgent.agentName}</span>
-            {activeAgent.description && (
-              <><span className="text-gh-border">·</span><span className="text-gh-muted truncate">{activeAgent.description}</span></>
-            )}
-            <span className="ml-auto shrink-0">
-              {activeAgent.isCompleted
-                ? <span className="inline-flex items-center gap-1 text-gh-muted"><span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />Done</span>
-                : <span className="inline-flex items-center gap-1 text-gh-active"><span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />Running</span>
-              }
-            </span>
-          </div>
-        )}
+          {/* Sub-agent context bar */}
+          {activeTab !== 'plan' && activeTab !== 'todos' && activeAgent && (
+            <div className="px-4 py-2 border-b border-gh-border bg-gh-surface/50 flex items-center gap-2 text-xs">
+              <span className="text-gh-muted">Sub-agent</span>
+              <span className="font-mono text-gh-text font-medium">{activeAgent.agentDisplayName || activeAgent.agentName}</span>
+              {activeAgent.description && (
+                <><span className="text-gh-border">·</span><span className="text-gh-muted truncate">{activeAgent.description}</span></>
+              )}
+              <span className="ml-auto shrink-0">
+                {activeAgent.isCompleted
+                  ? <span className="inline-flex items-center gap-1 text-gh-muted"><span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />Done</span>
+                  : <span className="inline-flex items-center gap-1 text-gh-active"><span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />Running</span>
+                }
+              </span>
+            </div>
+          )}
 
-        {activeTab !== 'plan' && activeTab !== 'todos' && (
-          <MessageList
-            messages={activeMessages}
-            maxHeight={hasTabs ? 'calc(100vh - 360px)' : 'calc(100vh - 280px)'}
-          />
-        )}
+          {activeTab !== 'plan' && activeTab !== 'todos' && (
+            <MessageList
+              messages={activeMessages}
+              maxHeight={hasTabs ? 'calc(100vh - 280px)' : 'calc(100vh - 240px)'}
+            />
+          )}
+        </div>
       </div>
+      <SessionSidebar currentId={id ?? ''} sessions={sessions} />
     </div>
   );
 }

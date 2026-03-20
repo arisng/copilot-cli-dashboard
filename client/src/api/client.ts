@@ -50,6 +50,7 @@ export interface ParsedMessage {
   id: string;
   role: 'user' | 'assistant' | 'task_complete';
   content: string;
+  reasoning?: string;
   toolRequests?: ToolRequest[];
   timestamp: string;
   interactionId?: string;
