@@ -6,6 +6,14 @@ A local web dashboard for [Copilot CLI](https://github.com/github/copilot-cli) t
 
 **Keywords:** agentic coding dashboard · Copilot CLI UI · AI coding agent monitor · multi-agent orchestration viewer · Claude Code sessions UI · LLM agent task tracker · sub-agent workflow visualization · AI pair programming dashboard
 
+## Quick start
+
+```bash
+npx copiloting-agents
+```
+
+Then open **http://localhost:3001** in your browser. No install, no config.
+
 <img width="1911" height="934" alt="Screenshot 2026-03-19 at 18 22 24" src="https://github.com/user-attachments/assets/b1d6a93a-8e06-4d98-940b-eece7f47574f" />
 
 <img width="1911" height="932" alt="Screenshot 2026-03-19 at 18 21 45" src="https://github.com/user-attachments/assets/6ce86d56-bd4c-437c-9eb9-d8789d27b049" />
@@ -165,17 +173,42 @@ Click **Enable notifications** in the header to receive desktop notifications wh
 
 > **macOS:** If notifications don't appear, check **System Settings → Notifications → [your browser]** and ensure it's set to Alerts or Banners.
 
-## Production Build
+## Running without cloning (npx)
+
+If the package is published to npm, anyone can run it with no installation step:
 
 ```bash
-# Build both server and client
-npm run build
-
-# Start the compiled server
-npm run start --workspace=server
+npx copiloting-agents
 ```
 
-Serve the built client (`client/dist/`) with any static file server or point your web server at it.
+This downloads the pre-built package and starts the server at **http://localhost:3001**.
+
+To use a different port:
+
+```bash
+PORT=8080 npx copiloting-agents
+```
+
+## Production mode (from source)
+
+Run a single command after `npm install` — no `npm run dev`, no separate client server:
+
+```bash
+npm install   # one-time setup
+npm start     # build + serve on http://localhost:3001
+```
+
+`npm start` compiles the TypeScript server, builds the Vite client, then launches Express which serves the built client as static files alongside the API. Everything runs on a single port.
+
+### Manual build steps
+
+If you want to build and start separately (e.g. in a container):
+
+```bash
+npm run build              # compiles server (tsc) + client (vite build)
+node server/dist/index.js  # starts the server; client/dist/ is served automatically
+```
+
 
 ## Project Structure
 
