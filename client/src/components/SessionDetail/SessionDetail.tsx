@@ -101,15 +101,15 @@ const planComponents: Components = {
 
 function PlanView({ content, isPending }: { content: string; isPending: boolean }) {
   return (
-    <div>
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {isPending && (
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-gh-attention/30 bg-gh-attention/10 text-gh-attention text-sm">
+        <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gh-attention/30 bg-gh-attention/10 text-gh-attention text-sm">
           <span className="w-2 h-2 rounded-full bg-gh-attention animate-pulse shrink-0" />
           <span className="font-medium">Waiting for your approval</span>
           <span className="text-gh-attention/70 text-xs">· Review the plan below and approve or reject it in your terminal</span>
         </div>
       )}
-      <div className="p-6 overflow-y-auto max-h-[calc(100vh-280px)]">
+      <div className="flex-1 overflow-y-auto p-6">
         <Markdown remarkPlugins={[remarkGfm]} components={planComponents}>{content}</Markdown>
       </div>
     </div>
@@ -148,7 +148,7 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
   ].filter((g) => g.items.length > 0);
 
   return (
-    <div className="p-4 overflow-y-auto max-h-[calc(100vh-280px)] space-y-4">
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
       {groups.map((group) => (
         <div key={group.label}>
           <p className={`text-xs font-medium uppercase tracking-wide mb-2 ${group.accent}`}>
@@ -272,7 +272,7 @@ function TabBar({ tabs, activeId, onChange }: { tabs: Tab[]; activeId: string; o
 
 // ── Message list ───────────────────────────────────────────────────────────
 
-function MessageList({ messages, maxHeight }: { messages: ParsedMessage[]; maxHeight: string }) {
+function MessageList({ messages }: { messages: ParsedMessage[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -285,7 +285,7 @@ function MessageList({ messages, maxHeight }: { messages: ParsedMessage[]; maxHe
   }
 
   return (
-    <div ref={containerRef} className="p-4 space-y-4 overflow-y-auto" style={{ maxHeight }}>
+    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
     </div>
   );
@@ -335,13 +335,13 @@ function SessionSidebar({ currentId, sessions }: { currentId: string; sessions: 
   }
 
   return (
-    <div className="w-60 shrink-0 sticky top-20 self-start">
-      <div className="rounded-lg border border-gh-border overflow-hidden">
-        <div className="px-3 py-2 border-b border-gh-border bg-gh-surface flex items-center justify-between">
+    <div className="w-60 shrink-0 sticky top-20 self-start max-h-full flex flex-col">
+      <div className="rounded-lg border border-gh-border overflow-hidden flex flex-col min-h-0 flex-1">
+        <div className="shrink-0 px-3 py-2 border-b border-gh-border bg-gh-surface flex items-center justify-between">
           <span className="text-xs font-medium text-gh-muted uppercase tracking-wider">Sessions</span>
           <span className="text-xs text-gh-muted/60">{sessions.length}</span>
         </div>
-        <div className="overflow-y-auto max-h-[calc(100vh-140px)]">
+        <div className="flex-1 overflow-y-auto min-h-0">
           {/* Open sessions */}
           {open.length > 0 && (
             <div className="bg-gh-active/5 border-b border-gh-active/20"
@@ -432,11 +432,11 @@ export function SessionDetail() {
     : (session.subAgentMessages?.[activeTab] ?? []);
 
   return (
-    <div className="flex gap-4 items-start">
-      <div className="flex-1 min-w-0">
+    <div className="flex gap-4 items-start h-full">
+      <div className="flex-1 min-w-0 flex flex-col h-full min-h-0">
         <SessionMeta session={session} />
 
-        <div className="rounded-lg border border-gh-border overflow-hidden">
+        <div className="flex-1 min-h-0 rounded-lg border border-gh-border overflow-hidden flex flex-col">
           {hasTabs && <TabBar tabs={tabs} activeId={activeTab} onChange={setActiveTab} />}
 
           {/* Plan */}
@@ -449,28 +449,26 @@ export function SessionDetail() {
             <TodosView todos={session.todos} />
           )}
 
-          {/* Sub-agent context bar */}
-          {activeTab !== 'plan' && activeTab !== 'todos' && activeAgent && (
-            <div className="px-4 py-2 border-b border-gh-border bg-gh-surface/50 flex items-center gap-2 text-xs">
-              <span className="text-gh-muted">Sub-agent</span>
-              <span className="font-mono text-gh-text font-medium">{activeAgent.agentDisplayName || activeAgent.agentName}</span>
-              {activeAgent.description && (
-                <><span className="text-gh-border">·</span><span className="text-gh-muted truncate">{activeAgent.description}</span></>
-              )}
-              <span className="ml-auto shrink-0">
-                {activeAgent.isCompleted
-                  ? <span className="inline-flex items-center gap-1 text-gh-muted"><span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />Done</span>
-                  : <span className="inline-flex items-center gap-1 text-gh-active"><span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />Running</span>
-                }
-              </span>
-            </div>
-          )}
-
+          {/* Messages + optional sub-agent context bar */}
           {activeTab !== 'plan' && activeTab !== 'todos' && (
-            <MessageList
-              messages={activeMessages}
-              maxHeight={hasTabs ? 'calc(100vh - 280px)' : 'calc(100vh - 240px)'}
-            />
+            <>
+              {activeAgent && (
+                <div className="shrink-0 px-4 py-2 border-b border-gh-border bg-gh-surface/50 flex items-center gap-2 text-xs">
+                  <span className="text-gh-muted">Sub-agent</span>
+                  <span className="font-mono text-gh-text font-medium">{activeAgent.agentDisplayName || activeAgent.agentName}</span>
+                  {activeAgent.description && (
+                    <><span className="text-gh-border">·</span><span className="text-gh-muted truncate">{activeAgent.description}</span></>
+                  )}
+                  <span className="ml-auto shrink-0">
+                    {activeAgent.isCompleted
+                      ? <span className="inline-flex items-center gap-1 text-gh-muted"><span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />Done</span>
+                      : <span className="inline-flex items-center gap-1 text-gh-active"><span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />Running</span>
+                    }
+                  </span>
+                </div>
+              )}
+              <MessageList messages={activeMessages} />
+            </>
           )}
         </div>
       </div>

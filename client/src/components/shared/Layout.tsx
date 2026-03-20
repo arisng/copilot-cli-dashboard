@@ -24,7 +24,7 @@ export function Layout({ children }: Props) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gh-bg flex flex-col">
+    <div className="h-screen bg-gh-bg flex flex-col overflow-hidden">
       {/* Nav bar */}
       <header className="border-b border-gh-border bg-gh-surface sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
@@ -72,7 +72,7 @@ export function Layout({ children }: Props) {
       )}
 
       {/* Content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
+      <main className="flex-1 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full px-4 py-6">
         {children}
       </main>
     </div>

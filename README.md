@@ -4,7 +4,7 @@
 
 A local web dashboard for [Copilot CLI](https://github.com/github/copilot-cli) that gives you full visibility into what your AI coding agent is doing. Whether you're running multi-agent workflows, waiting for plan approval, or just checking whether a long task is still in progress — this dashboard surfaces it all without touching your terminal.
 
-**Keywords:** agentic coding dashboard · Copilot CLI UI · AI coding agent monitor · multi-agent orchestration viewer · Claude Code sessions UI · LLM agent task tracker · sub-agent workflow visualization · AI pair programming dashboard
+**Keywords:** agentic coding dashboard · Copilot CLI UI · AI coding agent monitor · multi-agent orchestration viewer · LLM agent task tracker · sub-agent workflow visualization · AI pair programming dashboard
 
 ## Quick start
 
