@@ -115,6 +115,7 @@ export interface SessionSummary {
   isIdle: boolean; // turn ended cleanly, waiting for next user message
   messageCount: number; // user messages only
   model?: string;
+  currentMode: string; // 'interactive' | 'plan' | 'auto' — from session.mode_changed events
   activeSubAgents: ActiveSubAgent[];
   hasPlan: boolean; // plan.md exists in session directory
   isPlanPending: boolean; // exit_plan_mode has been called and is awaiting user approval

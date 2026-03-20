@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { SessionSummary, ActiveSubAgent } from '../../api/client.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { AttentionBadge } from './AttentionBadge.tsx';
+import { ModeBadge } from '../shared/modeBadge.tsx';
 
 interface Props {
   session: SessionSummary;
@@ -151,6 +152,10 @@ export function SessionRow({ session }: Props) {
               )}
               {!session.isOpen && (
                 <span className="text-xs text-gh-muted">Closed</span>
+              )}
+              <ModeBadge mode={session.currentMode} />
+              {session.model && (
+                <span className="text-xs font-mono text-gh-muted/60">{session.model}</span>
               )}
             </div>
           </div>

@@ -16,7 +16,7 @@ import type {
   ActiveSubAgent,
   TodoItem,
 } from './sessionTypes.js';
-import { needsAttention, lastSessionStatus, hasPendingWork, hasPendingPlanApproval } from './utils/needsAttention.js';
+import { needsAttention, lastSessionStatus, hasPendingWork, hasPendingPlanApproval, getCurrentMode } from './utils/needsAttention.js';
 
 const SESSIONS_BASE = path.join(os.homedir(), '.copilot', 'session-state');
 
@@ -275,6 +275,7 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
       isTaskComplete: false,
       isIdle: true,
       messageCount: 0,
+      currentMode: 'interactive',
       activeSubAgents: [],
       hasPlan: false,
       isPlanPending: false,
@@ -321,6 +322,7 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
     isIdle: isOpen && lastSessionStatus(events) === 'idle',
     messageCount: messages.filter((m) => m.role === 'user').length,
     model,
+    currentMode: getCurrentMode(events),
     activeSubAgents,
     hasPlan,
     isPlanPending,

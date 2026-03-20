@@ -24,6 +24,12 @@ const config: Config = {
       },
     },
   },
+  safelist: [
+    // Mode badge + border classes — dynamically selected based on session.currentMode
+    'border-green-400/30', 'text-green-400', 'bg-green-400/5',
+    'border-sky-400/30',   'text-sky-400',   'bg-sky-400/5',
+    'border-gray-500/30',  'text-gray-400',  'bg-gray-400/5',
+  ],
   plugins: [],
 };
 

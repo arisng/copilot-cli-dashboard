@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { SessionSummary, MessagePreview } from '../../api/client.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { AttentionBadge } from './AttentionBadge.tsx';
+import { ModeBadge } from '../shared/modeBadge.tsx';
 
 interface Props {
   session: SessionSummary;
@@ -189,6 +190,10 @@ export function SessionCard({ session }: Props) {
           </span>
           <span className="text-gh-border text-xs">·</span>
           <StatusBadge session={session} />
+          <ModeBadge mode={session.currentMode} />
+          {session.model && (
+            <span className="text-gh-muted/60 text-xs font-mono">{session.model}</span>
+          )}
         </div>
       </div>
 

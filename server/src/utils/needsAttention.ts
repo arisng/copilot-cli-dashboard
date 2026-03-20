@@ -14,11 +14,21 @@ function requiresUserApproval(toolName: string, inApprovalMode: boolean): boolea
 // In plan/cautious mode every tool call requires explicit user approval before it
 // runs — tool.execution_start fires when the approval prompt appears, so any
 // pending start (no matching complete) means the user hasn't responded yet.
-function getCurrentMode(events: RawEvent[]): string {
+export function getCurrentMode(events: RawEvent[]): string {
   let mode = 'interactive';
+  const exitPlanStarted = new Map<string, true>();
+
   for (const event of events) {
     if (event.type === 'session.mode_changed') {
       mode = (event.data as { newMode?: string }).newMode ?? mode;
+    } else if (event.type === 'tool.execution_start' && event.data['toolName'] === 'exit_plan_mode') {
+      exitPlanStarted.set(event.data['toolCallId'] as string, true);
+    } else if (event.type === 'tool.execution_complete') {
+      // When exit_plan_mode is approved it completes — session is back to interactive
+      if (exitPlanStarted.has(event.data['toolCallId'] as string)) {
+        mode = 'interactive';
+        exitPlanStarted.delete(event.data['toolCallId'] as string);
+      }
     }
   }
   return mode;
@@ -50,45 +60,33 @@ function hasPendingUserInteraction(events: RawEvent[]): boolean {
   return [...pending.values()].some((name) => requiresUserApproval(name, inApprovalMode));
 }
 
-// Any tool pending > 1 minute without completion is likely awaiting user approval.
-// bash gets extra leeway via initial_wait (e.g. mvn test with initial_wait=60 → 120s threshold).
-// Everything else (edit, task, view, mcp-*, etc.) uses the flat 60s threshold.
+// Non-bash tools pending > 1 minute without completion are likely awaiting user approval.
+// bash is excluded entirely — tests and builds run autonomously and can take many minutes.
+// In approval mode, hasPendingUserInteraction already catches pending bash.
 function hasStuckPendingTool(events: RawEvent[]): boolean {
-  const started = new Map<string, { toolName: string; timestamp: number; initialWait: number }>();
-  let lastTurnStartTs = 0;
+  const started = new Map<string, { toolName: string; timestamp: number }>();
 
   for (const event of events) {
     if (event.type === 'tool.execution_start') {
       const id = event.data['toolCallId'] as string;
       const toolName = event.data['toolName'] as string;
-      const args = (event.data['arguments'] as Record<string, unknown>) ?? {};
-      const initialWait = typeof args['initial_wait'] === 'number' ? (args['initial_wait'] as number) : 0;
-      started.set(id, { toolName, timestamp: Date.parse(event.timestamp), initialWait });
+      started.set(id, { toolName, timestamp: Date.parse(event.timestamp) });
     } else if (event.type === 'tool.execution_complete') {
       started.delete(event.data['toolCallId'] as string);
     } else if (event.type === 'abort') {
       started.clear();
-      lastTurnStartTs = 0;
-    } else if (event.type === 'assistant.turn_start') {
-      lastTurnStartTs = Date.parse(event.timestamp);
-    } else if (event.type === 'assistant.turn_end' || event.type === 'user.message') {
-      lastTurnStartTs = 0;
     }
   }
 
   const now = Date.now();
   const ONE_MINUTE = 60 * 1000;
 
-  // Any tool pending > 1 minute (bash with initial_wait gets extra buffer)
-  for (const { toolName, timestamp, initialWait } of started.values()) {
-    const threshold = toolName === 'bash'
-      ? (initialWait + 60) * 1000
-      : ONE_MINUTE;
-    if (now - timestamp > threshold) return true;
+  // Non-bash tools pending > 1 minute are likely stuck (edit/read/task etc. are always fast).
+  // Bash is excluded — tests and builds run autonomously and can take many minutes.
+  for (const { toolName, timestamp } of started.values()) {
+    if (toolName === 'bash') continue;
+    if (now - timestamp > ONE_MINUTE) return true;
   }
-
-  // Generation phase stuck > 1 minute (assistant.turn_start with no message yet)
-  if (lastTurnStartTs > 0 && now - lastTurnStartTs > ONE_MINUTE) return true;
 
   return false;
 }

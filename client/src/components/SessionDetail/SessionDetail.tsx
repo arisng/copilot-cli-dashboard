@@ -7,6 +7,7 @@ import { useSession } from '../../hooks/useSession.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
 import { SessionMeta } from './SessionMeta.tsx';
+import { modeBorderClass } from '../shared/modeBadge.tsx';
 import { MessageBubble } from './MessageBubble.tsx';
 import { RelativeTime } from '../shared/RelativeTime.tsx';
 import type { ActiveSubAgent, ParsedMessage, SessionSummary, TodoItem } from '../../api/client.ts';
@@ -436,7 +437,7 @@ export function SessionDetail() {
       <div className="flex-1 min-w-0 flex flex-col h-full min-h-0">
         <SessionMeta session={session} />
 
-        <div className="flex-1 min-h-0 rounded-lg border border-gh-border overflow-hidden flex flex-col">
+        <div className={`flex-1 min-h-0 rounded-lg border overflow-hidden flex flex-col ${modeBorderClass(session.currentMode)}`}>
           {hasTabs && <TabBar tabs={tabs} activeId={activeTab} onChange={setActiveTab} />}
 
           {/* Plan */}

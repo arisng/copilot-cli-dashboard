@@ -29,6 +29,7 @@ export interface SessionSummary {
   isIdle: boolean;
   messageCount: number;
   model?: string;
+  currentMode: string;
   activeSubAgents: ActiveSubAgent[];
   hasPlan: boolean;
   isPlanPending: boolean;
