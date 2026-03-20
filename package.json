@@ -1,6 +1,6 @@
 {
   "name": "copiloting-agents",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Real-time web dashboard for monitoring GitHub Copilot agent sessions",
   "type": "module",
   "workspaces": ["server", "client"],
@@ -25,6 +25,12 @@
     "install:all": "npm install",
     "start": "npm run build && node server/dist/index.js",
     "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
