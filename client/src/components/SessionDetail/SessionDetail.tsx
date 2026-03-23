@@ -313,15 +313,15 @@ function DetailPanelHeader({ tab, session }: { tab: SessionDetailTab; session: S
 
 const SIDEBAR_PAGE_SIZE = 10;
 
-function SessionSidebar({
+  function SessionSidebar({
   currentId,
   currentProjectPath,
   sessions,
-}: {
-  currentId: string;
-  currentProjectPath: string;
-  sessions: SessionSummary[];
-}) {
+  }: {
+    currentId: string;
+    currentProjectPath: string;
+    sessions: SessionSummary[];
+  }) {
   const navigate = useNavigate();
   const currentProjectKey = useMemo(
     () => normalizeProjectPathForComparison(currentProjectPath),
@@ -439,9 +439,9 @@ function SessionSidebar({
     }));
   }
 
-  return (
-    <div className="w-60 shrink-0 sticky top-20 self-start max-h-full flex flex-col">
-      <div className="rounded-lg border border-gh-border overflow-hidden flex flex-col min-h-0 flex-1">
+    return (
+      <div className="flex h-full min-w-0 min-h-0 flex-col">
+        <div className="rounded-lg border border-gh-border overflow-hidden flex flex-col min-h-0 flex-1">
         <div className="shrink-0 border-b border-gh-border bg-gh-surface">
           <div className="flex items-start justify-between gap-2 px-3 py-2">
             <div className="min-w-0">
@@ -619,53 +619,50 @@ export function SessionDetail() {
   ];
 
   const resolvedActiveTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : 'main';
-  const shouldShowNav = tabs.length > 1;
   const activeTabDefinition = tabs.find((tab) => tab.id === resolvedActiveTab) ?? tabs[0];
   const activeMessages = resolvedActiveTab === 'main'
     ? session.messages
     : (session.subAgentMessages?.[resolvedActiveTab] ?? []);
-  const panelAccessibilityProps = shouldShowNav
-    ? { 'aria-labelledby': getSessionDetailTabId(resolvedActiveTab) }
-    : { 'aria-label': activeTabDefinition.label };
+  const panelAccessibilityProps = { 'aria-labelledby': getSessionDetailTabId(resolvedActiveTab) };
+  const detailPanelClassName = `flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`;
 
   return (
-    <div className="flex min-w-0 items-start gap-3 h-full xl:gap-4">
-      <div className="flex-1 min-w-0 flex flex-col h-full min-h-0">
-        <SessionMeta session={session} />
+    <div className="grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(24rem,1.15fr)_minmax(34rem,1.65fr)_minmax(20rem,1fr)] 2xl:grid-cols-[minmax(26rem,1.2fr)_minmax(36rem,1.75fr)_minmax(22rem,1fr)] xl:gap-4">
+      <section className="flex min-w-0 min-h-0 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+          <SessionMeta session={session} />
+        </div>
+      </section>
 
-        <div className={`flex-1 min-h-0 rounded-xl border overflow-hidden bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`}>
-          <div className="flex h-full min-h-0 min-w-0">
-            {shouldShowNav && (
-              <aside className="w-48 shrink-0 min-h-0 border-r border-gh-border bg-gh-surface/35 p-3 xl:w-56 2xl:w-60">
-                <SessionTabNav tabs={tabs} activeId={resolvedActiveTab} onChange={setActiveTab} />
-              </aside>
+      <section className="grid min-w-0 min-h-0 w-full gap-4 xl:grid-cols-[minmax(16rem,18rem)_minmax(0,1fr)]">
+        <aside className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-surface/35 p-3">
+          <SessionTabNav tabs={tabs} activeId={resolvedActiveTab} onChange={setActiveTab} />
+        </aside>
+
+        <div className={detailPanelClassName}>
+          <DetailPanelHeader tab={activeTabDefinition} session={session} />
+
+          <div
+            id={getSessionDetailPanelId(resolvedActiveTab)}
+            role="tabpanel"
+            className="flex-1 min-h-0 flex flex-col"
+            {...panelAccessibilityProps}
+          >
+            {resolvedActiveTab === 'plan' && session.planContent && (
+              <PlanView content={session.planContent} isPending={session.isPlanPending} />
             )}
 
-            <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
-              <DetailPanelHeader tab={activeTabDefinition} session={session} />
+            {resolvedActiveTab === 'todos' && session.todos && (
+              <TodosView todos={session.todos} />
+            )}
 
-              <div
-                id={getSessionDetailPanelId(resolvedActiveTab)}
-                role="tabpanel"
-                className="flex-1 min-h-0 flex flex-col"
-                {...panelAccessibilityProps}
-              >
-                {resolvedActiveTab === 'plan' && session.planContent && (
-                  <PlanView content={session.planContent} isPending={session.isPlanPending} />
-                )}
-
-                {resolvedActiveTab === 'todos' && session.todos && (
-                  <TodosView todos={session.todos} />
-                )}
-
-                {resolvedActiveTab !== 'plan' && resolvedActiveTab !== 'todos' && (
-                  <MessageList messages={activeMessages} />
-                )}
-              </div>
-            </section>
+            {resolvedActiveTab !== 'plan' && resolvedActiveTab !== 'todos' && (
+              <MessageList messages={activeMessages} />
+            )}
           </div>
         </div>
-      </div>
+      </section>
+
       <SessionSidebar currentId={id ?? ''} currentProjectPath={session.projectPath} sessions={sessions} />
     </div>
   );

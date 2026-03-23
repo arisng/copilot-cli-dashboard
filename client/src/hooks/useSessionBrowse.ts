@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { SessionSummary } from '../api/client.ts';
 
-export type SessionBrowseStatus = 'Idle' | 'Task complete' | 'Needs attention';
+export type SessionBrowseStatus = 'Needs attention' | 'Working' | 'Task complete' | 'Idle';
 export type SessionBrowseSortField =
   | 'last_activity'
   | 'session_time'
@@ -40,9 +40,10 @@ export interface SessionBrowseResult {
 }
 
 export const SESSION_BROWSE_STATUS_OPTIONS: SessionBrowseStatus[] = [
-  'Idle',
-  'Task complete',
   'Needs attention',
+  'Working',
+  'Task complete',
+  'Idle',
 ];
 
 export const SESSION_BROWSE_SORT_FIELDS: SessionBrowseSortField[] = [
@@ -180,6 +181,10 @@ export function getBranchOptions(sessions: SessionSummary[], projectPath: string
 export function getSessionBrowseStatus(session: SessionSummary): SessionBrowseStatus | null {
   if (session.needsAttention) {
     return 'Needs attention';
+  }
+
+  if (session.isWorking) {
+    return 'Working';
   }
 
   if (session.isTaskComplete) {

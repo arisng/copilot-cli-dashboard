@@ -364,9 +364,10 @@ export function MobileSessionList() {
 
   const statusCounts = useMemo(() => {
     const counts: Record<SessionBrowseStatus, number> = {
-      Idle: 0,
-      'Task complete': 0,
       'Needs attention': 0,
+      Working: 0,
+      'Task complete': 0,
+      Idle: 0,
     };
 
     for (const session of statusScopeSessions) {

@@ -271,7 +271,7 @@ export function SessionMeta({ session }: Props) {
       </button>
 
       <section className="rounded-xl border border-gh-border bg-gh-surface/40 p-4 md:p-5">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
+        <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-gh-muted">Session overview</p>
 
