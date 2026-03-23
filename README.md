@@ -187,9 +187,9 @@ npm run tunnel:prod
 
 `npm run tunnel:prod` now runs a quick preflight against `http://localhost:3001/api/health` and exits with a clear reminder to start the production server first if nothing is listening yet. This uses the built client that Express serves from `client/dist`, so the phone opens the same dashboard without running Vite separately.
 
-### Fixed Dev Tunnel subdomains (recommended)
+### Fixed Dev Tunnel IDs (recommended)
 
-To avoid random temp URLs, this repo uses default subdomains so you can run the tunnel command without extra args:
+To avoid random temp URLs, this repo uses fixed tunnel IDs so you can run the tunnel command without extra args:
 
 - dev UI: `copiloting-agents-client` (port 5173)
 - prod server: `copiloting-agents-prod` (port 3001)
@@ -208,12 +208,12 @@ npm start
 npm run tunnel:prod
 ```
 
-If you want to override the default prod subdomain:
+If you want to override the default prod tunnel ID:
 
 ```bash
-set DEVTUNNEL_SUBDOMAIN=myapp-prod && npm run tunnel:prod
+set DEVTUNNEL_TUNNEL_ID=myapp-prod && npm run tunnel:prod
 # (PowerShell alternative)
-$Env:DEVTUNNEL_SUBDOMAIN = 'myapp-prod'; npm run tunnel:prod
+$Env:DEVTUNNEL_TUNNEL_ID = 'myapp-prod'; npm run tunnel:prod
 ```
 
 ## How It Works

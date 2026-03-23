@@ -24,7 +24,7 @@
     "build": "npm run build --workspace=server && npm run build --workspace=client",
     "install:all": "npm install",
     "start": "npm run build && node server/dist/index.js",
-    "tunnel:client": "devtunnel host -p 5173 --subdomain copiloting-agents-client",
+    "tunnel:client": "node ./bin/tunnel-client.js",
     "tunnel:prod": "node ./bin/tunnel-prod.js",
     "prepublishOnly": "npm run build"
   },

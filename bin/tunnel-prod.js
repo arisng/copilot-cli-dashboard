@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const DEFAULT_PORT = 3001;
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -8,22 +8,59 @@ const port = parsePort(process.env.PORT);
 const appUrl = `http://localhost:${port}`;
 const healthUrl = `http://127.0.0.1:${port}/api/health`;
 
-const preflightResult = await runPreflight();
+const preflightResult = await runPreflightWithRetry();
 
 if (!preflightResult.ok) {
   printPreflightFailure(preflightResult);
   process.exit(1);
 }
 
-const defaultSubdomain = 'copiloting-agents-prod';
-const subdomain =
-  process.env.DEVTUNNEL_SUBDOMAIN ||
-  process.env.TUNNEL_SUBDOMAIN ||
-  defaultSubdomain;
+const defaultTunnelId = 'copiloting-agents-prod';
+const tunnelId =
+  process.env.DEVTUNNEL_TUNNEL_ID ||
+  process.env.TUNNEL_ID ||
+  defaultTunnelId;
 
-console.log(`Production server detected at ${appUrl}. Starting Dev Tunnels (subdomain=${subdomain})...`);
+console.log(`Production server detected at ${appUrl}. Using tunnel ID ${tunnelId}.`);
 
-const child = spawn('devtunnel', ['host', '-p', String(port), '--subdomain', subdomain], {
+// Ensure tunnel exists, creating it if needed.
+try {
+  const createRes = spawnSync('devtunnel', ['create', tunnelId], {
+    stdio: 'inherit',
+  });
+
+  if (createRes.error) {
+    throw createRes.error;
+  }
+
+  if (createRes.status !== 0) {
+    console.log(`Tunnel create command returned status ${createRes.status}. This is okay if tunnel already exists.`);
+  }
+} catch (error) {
+  // Create may fail if tunnel exists or because devtunnel is not installed; we ignore and continue to port setup/host.
+  console.warn('Warning: failed to create tunnel (it may already exist):', error?.message || error);
+}
+
+// Ensure port entry exists for the tunnel.
+try {
+  const portRes = spawnSync('devtunnel', ['port', 'create', tunnelId, '-p', String(port)], {
+    stdio: 'inherit',
+  });
+
+  if (portRes.error) {
+    throw portRes.error;
+  }
+
+  if (portRes.status !== 0) {
+    console.log(`Port create command returned status ${portRes.status}. This is okay if port already exists.`);
+  }
+} catch (error) {
+  console.warn('Warning: failed to create port (it may already exist):', error?.message || error);
+}
+
+console.log(`Starting Dev Tunnels host on tunnelId=${tunnelId}...`);
+
+const child = spawn('devtunnel', ['host', tunnelId], {
   stdio: 'inherit',
 });
 
@@ -116,6 +153,25 @@ async function runPreflight() {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function runPreflightWithRetry(maxAttempts = 8, initialDelayMs = 500) {
+  let lastResult;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    lastResult = await runPreflight();
+    if (lastResult.ok) {
+      return lastResult;
+    }
+
+    if (attempt < maxAttempts) {
+      const delayMs = initialDelayMs * attempt;
+      console.log(`Preflight attempt ${attempt}/${maxAttempts} failed. Retrying in ${delayMs}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return lastResult;
 }
 
 function printPreflightFailure(result) {
