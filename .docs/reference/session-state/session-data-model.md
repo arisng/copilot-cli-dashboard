@@ -1,17 +1,19 @@
-# Session Data Model
+# Session Data Model Reference
 
-Sessions are stored as newline-delimited JSON in a Copilot session-state directory. On Linux and WSL that is typically `~/.copilot/session-state/<uuid>/events.jsonl`; on Windows the dashboard also discovers Copilot sessions from WSL distributions automatically.
+Copilot session state is stored as newline-delimited JSON inside a session-state directory.
 
-## Directory Structure
+## Directory structure
 
-```
+```text
 session-state/
 └── <session-uuid>/
     ├── events.jsonl        # append-only event log
     └── inuse.<pid>.lock    # present only while the process is running
 ```
 
-## Key Event Types
+On Linux and WSL this is typically `~/.copilot/session-state/<uuid>/events.jsonl`. On Windows, the dashboard also discovers accessible WSL distributions automatically.
+
+## Key event types
 
 | Event | When emitted |
 |-------|-------------|
@@ -20,23 +22,25 @@ session-state/
 | `session.task_complete` | Agent completed a task |
 | `session.model_change` | Model switched mid-session |
 | `user.message` | User sent a message |
-| `assistant.message` | Agent replied (may include `toolRequests[]`) |
+| `assistant.message` | Agent replied and may include `toolRequests[]` |
 | `assistant.turn_start` | Agent started processing |
 | `assistant.turn_end` | Agent finished processing |
 | `tool.execution_start` | Tool call started |
-| `tool.execution_complete` | Tool call finished (has `result` or `error`) |
+| `tool.execution_complete` | Tool call finished with `result` or `error` |
 | `abort` | User cancelled the current operation |
 
-## `ask_user` Tool Schemas
+## `ask_user` tool schemas
 
-Two argument formats exist in the wild:
+Two argument formats appear in the session log.
 
-**Old format:**
+**Old format**
+
 ```json
 { "question": "...", "choices": ["A", "B"], "allow_freeform": true }
 ```
 
-**New format:**
+**New format**
+
 ```json
 {
   "message": "...",
@@ -49,4 +53,10 @@ Two argument formats exist in the wild:
 }
 ```
 
-Result content is prefixed: `"User selected: <choice>"` or `"User responded: <answer>"` or `"User cancelled the request."`.
+Result content is prefixed with `User selected: `, `User responded: `, or `User cancelled the request.`.
+
+## Related references
+
+- [Server Architecture Reference](../server/server-architecture.md)
+- [Client Architecture Reference](../client/client-architecture.md)
+

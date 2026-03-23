@@ -14,6 +14,8 @@ npx copiloting-agents
 
 Then open **http://localhost:3001** in your browser. No install, no config.
 
+Desktop routes stay at `/` and `/sessions/:id`. The dedicated mobile namespace is available at `/m` and `/m/sessions/:id`.
+
 <img width="1911" height="934" alt="Screenshot 2026-03-19 at 18 22 24" src="https://github.com/user-attachments/assets/b1d6a93a-8e06-4d98-940b-eece7f47574f" />
 
 <img width="1911" height="932" alt="Screenshot 2026-03-19 at 18 21 45" src="https://github.com/user-attachments/assets/6ce86d56-bd4c-437c-9eb9-d8789d27b049" />
@@ -91,14 +93,14 @@ Then open **http://localhost:3001** in your browser. No install, no config.
 - **Dependency display** — expandable rows show task description and upstream dependencies
 
 ### Zero cloud dependency
-- Reads `~/.copilot/session-state/` directly from disk — no API calls, no internet required
+- Reads Copilot session-state directories directly from disk — on Windows it discovers both native and WSL-backed sessions automatically
 - Polling every 5 seconds picks up new sessions and state changes automatically
 
 ## Prerequisites
 
 - **Node.js** 20+
 - **npm** 10+
-- Copilot CLI installed and has created at least one session under `~/.copilot/session-state/`
+- Copilot CLI installed and has created at least one session in the detected session-state directory on Windows, Linux, or WSL
 
 ## Installation
 
@@ -119,26 +121,116 @@ npm run dev
 
 This starts both services concurrently:
 
-| Service | URL |
-|---------|-----|
+| Service    | URL                   |
+| ---------- | --------------------- |
 | API server | http://localhost:3001 |
 | Web client | http://localhost:5173 |
 
 Open **http://localhost:5173** in your browser.
 
+Desktop routes stay at `/` and `/sessions/:id`. The dedicated mobile namespace is available at `/m` and `/m/sessions/:id`.
+
+## Access From Your Phone (Same Wi-Fi)
+
+When your phone is on the same home Wi-Fi, you can access the dashboard directly without an internet tunnel.
+
+1. Find your PC/laptop IP address:
+   - Windows: `ipconfig` → `IPv4 Address` under Wi-Fi.
+   - macOS/Linux: `ifconfig` or `ip addr show`.
+
+2. Start the app with host binding to all interfaces:
+
+```bash
+# Vite local dev (recommended for this project)
+HOST=0.0.0.0 PORT=5173 npm run dev
+
+# or the API server in this repo
+HOST=0.0.0.0 PORT=3001 npm run dev
+```
+
+3. On mobile browser, open:
+
+- `http://<PC_IP>:5173` for the frontend
+- `http://<PC_IP>:3001` for the API server (optional test)
+
+4. If default ports are busy, pick another port and adjust both start command and URL.
+
+5. Ensure local firewall allows the port (Windows Defender Firewall, etc.).
+
+---
+
+## Access From Your Phone (Remote/dev tunnel)
+
+Use Dev Tunnels when you are away from home or on a different network. The tunnel target depends on how you are running the app.
+
+### Dev mode
+
+Expose the Vite client on port 5173:
+
+```bash
+winget install Microsoft.devtunnel
+devtunnel user login
+npm run dev
+npm run tunnel:client
+```
+
+Keep both server and client running on your laptop, then open the tunnel URL from your phone. The tunnel is private by default, so sign in with the same Microsoft, GitHub, or Entra account in the phone browser.
+
+### Production mode
+
+Expose the single production server on port 3001:
+
+```bash
+npm start
+npm run tunnel:prod
+```
+
+`npm run tunnel:prod` now runs a quick preflight against `http://localhost:3001/api/health` and exits with a clear reminder to start the production server first if nothing is listening yet. This uses the built client that Express serves from `client/dist`, so the phone opens the same dashboard without running Vite separately.
+
+### Fixed Dev Tunnel subdomains (recommended)
+
+To avoid random temp URLs, this repo uses default subdomains so you can run the tunnel command without extra args:
+
+- dev UI: `copiloting-agents-client` (port 5173)
+- prod server: `copiloting-agents-prod` (port 3001)
+
+#### Dev tunnel command (desktop UI)
+
+```bash
+npm run dev
+npm run tunnel:client
+```
+
+#### Prod tunnel command
+
+```bash
+npm start
+npm run tunnel:prod
+```
+
+If you want to override the default prod subdomain:
+
+```bash
+set DEVTUNNEL_SUBDOMAIN=myapp-prod && npm run tunnel:prod
+# (PowerShell alternative)
+$Env:DEVTUNNEL_SUBDOMAIN = 'myapp-prod'; npm run tunnel:prod
+```
+
 ## How It Works
 
-The dashboard reads session state directly from `~/.copilot/session-state/` on your machine — no Copilot API calls, no internet required. The client polls the API every 5 seconds to pick up new sessions and state changes.
+The dashboard reads session state directly from the Copilot session-state directory on your machine — no Copilot API calls, no internet required. On Windows it automatically checks both the local Windows profile and any accessible WSL distributions. The client polls the API every 5 seconds to pick up new sessions and state changes.
+
+If you want to override discovery, set `COPILOT_SESSION_STATE` to one or more session-state roots separated by your platform path delimiter.
 
 ### Session States
 
-| State | Meaning |
-|-------|---------|
+| State                 | Meaning                                                      |
+| --------------------- | ------------------------------------------------------------ |
 | 🟡 **Needs attention** | Waiting for your input — pending `ask_user` or plan approval |
-| 🟢 **Working** | Agent has an active turn in progress |
-| 🟢 **Task complete** | Last task finished successfully |
-| ⚫ **Idle** | Turn ended cleanly, waiting for your next message |
-| 🔴 **Aborted** | Last action was cancelled and agent did not recover |
+| 🟢 **Working**         | Agent has an active turn in progress                         |
+| 🟢 **Task complete**   | Last task finished successfully                              |
+| ⚫ **Idle**            | Turn ended cleanly, waiting for your next message            |
+| 🔴 **Aborted**         | Last action was cancelled and agent did not recover          |
 
 ### Session Detail & Sub-agent Orchestration
 
@@ -200,6 +292,8 @@ npm start     # build + serve on http://localhost:3001
 
 `npm start` compiles the TypeScript server, builds the Vite client, then launches Express which serves the built client as static files alongside the API. Everything runs on a single port.
 
+To make that production server reachable from your phone while you are away from your local network, run `npm run tunnel:prod` in a second terminal after `npm start`. If you use a custom `PORT`, run both commands with the same port value so the preflight check and Dev Tunnel target stay aligned.
+
 ### Manual build steps
 
 If you want to build and start separately (e.g. in a container):
@@ -214,7 +308,7 @@ node server/dist/index.js  # starts the server; client/dist/ is served automatic
 
 ```
 copiloting-agents/
-├── server/          # Express API — reads ~/.copilot/session-state/
+├── server/          # Express API — reads detected Copilot session-state directories
 ├── client/          # React + Vite + Tailwind CSS dashboard
 └── docs/            # Architecture docs
     ├── client.md
