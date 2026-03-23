@@ -41,5 +41,6 @@ This index links Diátaxis-organized documentation for the workspace.
 ### Dashboard
 
 - [About the Dashboard Architecture](explanation/dashboard/how-it-works.md)
+- [About the Desktop Session UX Refresh](explanation/dashboard/desktop-session-ux.md)
 
 
