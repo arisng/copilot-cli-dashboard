@@ -5,8 +5,12 @@ import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 import router from './router.js';
 
+const DEFAULT_PORT = 3001;
 const app = express();
-const PORT = process.env.PORT ?? 3001;
+const configuredPort = process.env.PORT;
+const hasExplicitPort = configuredPort !== undefined;
+// Keep the dev server on the fixed port so the Vite proxy remains aligned with 3001.
+const allowPortFallback = !hasExplicitPort && process.env.npm_lifecycle_event !== 'dev';
 
 app.use(cors());
 app.use(express.json());
@@ -22,7 +26,80 @@ if (existsSync(clientDist)) {
   });
 }
 
-app.listen(PORT, () => {
+void main().catch((error: unknown) => {
+  if (isPortInUseError(error) && hasExplicitPort) {
+    console.error(
+      `Port ${configuredPort} is already in use. Set PORT to a different value or stop the process using it.`,
+    );
+  } else {
+    console.error(error instanceof Error ? error.message : String(error));
+  }
+
+  process.exit(1);
+});
+
+async function main() {
+  const requestedPort = parsePort(configuredPort ?? String(DEFAULT_PORT));
+  const port = await listenWithFallback(requestedPort, allowPortFallback);
+
+  if (!hasExplicitPort && port !== requestedPort) {
+    console.log(`Port ${requestedPort} is already in use; using ${port} instead.`);
+  }
+
+  printStartupBanner(port);
+}
+
+async function listenWithFallback(startPort: number, allowFallback: boolean) {
+  let port = startPort;
+
+  while (port <= 65535) {
+    try {
+      await listenOnPort(port);
+      return port;
+    } catch (error) {
+      if (!allowFallback || !isPortInUseError(error)) {
+        throw error;
+      }
+
+      port += 1;
+    }
+  }
+
+  throw new Error(`No available port found starting at ${startPort}.`);
+}
+
+function listenOnPort(port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port);
+
+    server.once('listening', () => {
+      resolve();
+    });
+
+    server.once('error', reject);
+  });
+}
+
+function parsePort(value: string): number {
+  const parsedPort = Number(value);
+
+  if (Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+    return parsedPort;
+  }
+
+  throw new Error(`Invalid PORT value "${value}". Expected a number between 1 and 65535.`);
+}
+
+function isPortInUseError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'EADDRINUSE'
+  );
+}
+
+function printStartupBanner(port: number) {
   const reset = '\x1b[0m';
   const bold  = '\x1b[1m';
   const cyan  = '\x1b[36m';
@@ -43,7 +120,7 @@ app.listen(PORT, () => {
 
   const blank = `${gray}│${reset}${' '.repeat(W)}${gray}│${reset}`;
 
-  const url        = `http://localhost:${PORT}`;
+  const url        = `http://localhost:${port}`;
   const urlVisible = `Local:  ${url}`;
   const urlStyled  = `${gray}Local:${reset}  ${cyan}${bold}${url}${reset}`;
 
@@ -69,4 +146,4 @@ app.listen(PORT, () => {
   console.log(blank);
   console.log(border('└', '┘'));
   console.log('');
-});
+}
