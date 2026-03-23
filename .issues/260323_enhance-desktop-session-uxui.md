@@ -1,7 +1,7 @@
 ---
 title: "Enhance Desktop session UI: Overview panel + responsive detail layout"
 type: "Feature"
-status: "Proposed"
+status: "Resolved"
 author: "Copilot"
 created: "2026-03-23"
 priority: "Medium"
