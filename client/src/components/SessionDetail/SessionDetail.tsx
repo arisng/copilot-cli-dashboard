@@ -24,10 +24,16 @@ import {
   SESSION_BROWSE_SORT_FIELD_LABELS,
 } from '../shared/SessionBrowseControls.tsx';
 import { SessionMeta } from './SessionMeta.tsx';
+import {
+  SessionTabNav,
+  type SessionDetailTab,
+  getSessionDetailPanelId,
+  getSessionDetailTabId,
+} from './SessionTabNav.tsx';
 import { modeBorderClass } from '../shared/modeBadge.tsx';
 import { MessageBubble } from './MessageBubble.tsx';
 import { RelativeTime } from '../shared/RelativeTime.tsx';
-import type { ActiveSubAgent, ParsedMessage, SessionSummary, TodoItem } from '../../api/client.ts';
+import type { ParsedMessage, SessionDetail as SessionDetailData, SessionSummary, TodoItem } from '../../api/client.ts';
 
 // ── Plan markdown components ───────────────────────────────────────────────
 
@@ -149,6 +155,10 @@ function isDone(status: string) {
   return status === 'done' || status === 'completed' || status === 'cancelled';
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function TodosView({ todos }: { todos: TodoItem[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggle = (id: string) =>
@@ -223,71 +233,6 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
   );
 }
 
-// ── Tab bar ────────────────────────────────────────────────────────────────
-
-interface Tab {
-  id: string;
-  label: string;
-  isCompleted?: boolean;
-  isSubAgent: boolean;
-  isPlan?: boolean;
-  isTodos?: boolean;
-  agent?: ActiveSubAgent;
-  accentColor?: 'blue' | 'sky'; // blue = default sub-agent, sky = code-review
-}
-
-function TabBar({ tabs, activeId, onChange }: { tabs: Tab[]; activeId: string; onChange: (id: string) => void }) {
-  return (
-    <div className="flex items-end border-b border-gh-border overflow-x-auto">
-      {tabs.map((tab) => {
-        const isActive = tab.id === activeId;
-        return (
-          <button
-            key={tab.id}
-            onClick={() => onChange(tab.id)}
-            className={`
-              flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition-colors
-              ${isActive
-                ? 'border-gh-accent text-gh-text bg-gh-surface'
-                : 'border-transparent text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'
-              }
-            `}
-          >
-            {tab.isPlan && (
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="shrink-0 text-gh-attention">
-                <path d="M0 1.75A.75.75 0 01.75 1h4.253c1.227 0 2.317.59 3 1.501A3.744 3.744 0 0111.006 1h4.245a.75.75 0 01.75.75v10.5a.75.75 0 01-.75.75h-4.507a2.25 2.25 0 00-1.591.659l-.622.621a.75.75 0 01-1.06 0l-.622-.621A2.25 2.25 0 005.258 13H.75a.75.75 0 01-.75-.75zm7.251 10.324l.022-.067v-8.51c-.09-.198-.2-.37-.33-.517A2.25 2.25 0 005.003 2.5H1.5v9.013h3.757a3.75 3.75 0 012-.689zm1.499-8.577v8.51l.022.068a3.75 3.75 0 012-.711H14.5V2.5h-3.244a2.25 2.25 0 00-1.852.979c-.13.148-.24.32-.154.518z"/>
-              </svg>
-            )}
-            {tab.isTodos && (
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="shrink-0 text-gh-active">
-                <path d="M2.5 1.75v11.5c0 .138.112.25.25.25h3.17a.75.75 0 010 1.5H2.75A1.75 1.75 0 011 13.25V1.75C1 .784 1.784 0 2.75 0h8.5C12.216 0 13 .784 13 1.75v7.736a.75.75 0 01-1.5 0V1.75a.25.25 0 00-.25-.25h-8.5a.25.25 0 00-.25.25zm11.03 9.58a.75.75 0 10-1.06-1.06l-2.97 2.97-1.22-1.22a.75.75 0 00-1.06 1.06l1.75 1.75a.75.75 0 001.06 0l3.5-3.5zM4.75 4a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5zm-.75 3.75A.75.75 0 014.75 7h2a.75.75 0 010 1.5h-2A.75.75 0 014 7.75z"/>
-              </svg>
-            )}
-            {tab.isSubAgent && (
-              <span className={`inline-flex items-center justify-center w-4 h-4 rounded shrink-0 ${
-                tab.accentColor === 'sky' ? 'bg-sky-400/15 text-sky-400' : 'bg-gh-accent/15 text-gh-accent'
-              }`}>
-                <svg viewBox="0 0 16 16" width="9" height="9" fill="currentColor">
-                  <path d="M1.5 1.75a.25.25 0 01.25-.25h12.5a.25.25 0 010 .5H1.75a.25.25 0 01-.25-.25zM1.5 8a.25.25 0 01.25-.25h12.5a.25.25 0 010 .5H1.75A.25.25 0 011.5 8zm.25 5.75a.25.25 0 000 .5h12.5a.25.25 0 000-.5H1.75z"/>
-                </svg>
-              </span>
-            )}
-            <span>{tab.label}</span>
-            {tab.isPlan && (
-              <span className="w-1.5 h-1.5 rounded-full bg-gh-attention animate-pulse shrink-0" />
-            )}
-            {tab.isSubAgent && (
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                tab.isCompleted ? 'bg-gh-muted' : 'bg-gh-active animate-pulse'
-              }`} />
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Message list ───────────────────────────────────────────────────────────
 
 function MessageList({ messages }: { messages: ParsedMessage[] }) {
@@ -305,6 +250,61 @@ function MessageList({ messages }: { messages: ParsedMessage[] }) {
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
+    </div>
+  );
+}
+
+function DetailPanelHeader({ tab, session }: { tab: SessionDetailTab; session: SessionDetailData }) {
+  const todos = session.todos ?? [];
+  const activeTodos = todos.filter((todo) => todo.status === 'in_progress').length;
+  const blockedTodos = todos.filter((todo) => todo.status === 'blocked').length;
+  const doneTodos = todos.filter((todo) => isDone(todo.status)).length;
+  const activeAgent = tab.agent;
+
+  let subtitle = tab.description ?? 'Primary conversation, tool calls, and completion updates.';
+  let meta = `${pluralize(session.messageCount, 'message')} in the main session thread`;
+  let badgeLabel: string | null = session.isWorking ? 'Live' : null;
+  let badgeClass = 'border-gh-accent/30 bg-gh-accent/10 text-gh-accent';
+
+  if (tab.isPlan) {
+    subtitle = session.isPlanPending
+      ? 'Review the captured plan before execution continues.'
+      : 'Captured plan artifact saved from this session.';
+    meta = session.isPlanPending ? 'Approval is still pending in the CLI.' : 'Plan content is available for reference.';
+    badgeLabel = session.isPlanPending ? 'Needs review' : 'Captured';
+    badgeClass = session.isPlanPending
+      ? 'border-gh-attention/30 bg-gh-attention/10 text-gh-attention'
+      : 'border-gh-border bg-gh-bg/70 text-gh-muted';
+  } else if (tab.isTodos) {
+    subtitle = 'Tracked work items grouped by progress, blockers, and completed tasks.';
+    meta = todos.length > 0
+      ? `${pluralize(activeTodos, 'active todo')} · ${pluralize(blockedTodos, 'blocked todo')} · ${doneTodos}/${todos.length} done`
+      : 'No todos are recorded for this session yet.';
+    badgeLabel = todos.length > 0 ? `${doneTodos}/${todos.length} done` : null;
+    badgeClass = 'border-gh-active/30 bg-gh-active/10 text-gh-active';
+  } else if (activeAgent) {
+    subtitle = activeAgent.description || 'Sub-agent conversation and tool activity.';
+    meta = activeAgent.agentDisplayName || activeAgent.agentName;
+    badgeLabel = activeAgent.isCompleted ? 'Done' : 'Running';
+    badgeClass = activeAgent.isCompleted
+      ? 'border-gh-border bg-gh-bg/70 text-gh-muted'
+      : 'border-gh-active/30 bg-gh-active/10 text-gh-active';
+  }
+
+  return (
+    <div className="shrink-0 border-b border-gh-border bg-gh-surface/40 px-4 py-3">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-gh-text">{tab.label}</p>
+          <p className="mt-1 text-xs leading-5 text-gh-muted">{subtitle}</p>
+          <p className="mt-2 text-xs text-gh-muted/80">{meta}</p>
+        </div>
+        {badgeLabel && (
+          <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${badgeClass}`}>
+            {badgeLabel}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -551,11 +551,22 @@ export function SessionDetail() {
 
   useEffect(() => { setActiveTab('main'); }, [id]);
 
-  // Auto-switch to plan tab when plan is pending approval (only on first load)
   useEffect(() => {
-    if (session?.isPlanPending && activeTab === 'main') setActiveTab('plan');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.isPlanPending]);
+    if (!session?.isPlanPending) return;
+
+    setActiveTab((currentTab) => {
+      const selectedTabStillExists = currentTab === 'main'
+        || currentTab === 'plan'
+        || currentTab === 'todos'
+        || session.activeSubAgents.some((agent) => agent.toolCallId === currentTab);
+
+      if (currentTab === 'main' || !selectedTabStillExists) {
+        return 'plan';
+      }
+
+      return currentTab;
+    });
+  }, [session?.activeSubAgents, session?.id, session?.isPlanPending]);
 
   if (loading && !session) return <LoadingSpinner />;
   if (error) return (
@@ -564,14 +575,31 @@ export function SessionDetail() {
   if (!session) return null;
 
   const subAgents = [...(session.activeSubAgents ?? [])].reverse(); // newest first
-  const hasPlan  = !!session.planContent;
+  const hasPlan = !!session.planContent;
   const hasTodos = (session.todos?.length ?? 0) > 0;
-  const hasTabs  = hasPlan || hasTodos || subAgents.length > 0;
-
-  const tabs: Tab[] = [
-    { id: 'main',  label: 'Main',  isSubAgent: false },
-    ...(hasPlan  ? [{ id: 'plan',  label: 'Plan',  isSubAgent: false, isPlan: session.isPlanPending }] : []),
-    ...(hasTodos ? [{ id: 'todos', label: 'Todos', isSubAgent: false, isTodos: true }] : []),
+  const tabs: SessionDetailTab[] = [
+    {
+      id: 'main',
+      label: 'Main session',
+      description: `${pluralize(session.messageCount, 'message')} in the primary conversation.`,
+      isMain: true,
+      isSubAgent: false,
+    },
+    ...(hasPlan ? [{
+      id: 'plan',
+      label: 'Plan',
+      description: session.isPlanPending ? 'Review before execution continues.' : 'Captured plan artifact.',
+      isSubAgent: false,
+      isPlan: true,
+      isPlanPending: session.isPlanPending,
+    }] : []),
+    ...(hasTodos ? [{
+      id: 'todos',
+      label: 'Todos',
+      description: `${pluralize(session.todos?.length ?? 0, 'tracked item')}.`,
+      isSubAgent: false,
+      isTodos: true,
+    }] : []),
     ...subAgents.map((a) => {
       const isCodeReview = a.agentName === 'code-review' || a.agentName === 'code-reviewer';
       const isRead = a.agentName === 'read_agent';
@@ -581,6 +609,7 @@ export function SessionDetail() {
       return {
         id: a.toolCallId,
         label,
+        description: a.description || (a.isCompleted ? 'Completed thread' : 'Active thread'),
         isCompleted: a.isCompleted,
         isSubAgent: true,
         agent: a,
@@ -589,50 +618,52 @@ export function SessionDetail() {
     }),
   ];
 
-  const activeAgent    = tabs.find((t) => t.id === activeTab)?.agent;
-  const activeMessages = activeTab === 'main'
+  const resolvedActiveTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : 'main';
+  const shouldShowNav = tabs.length > 1;
+  const activeTabDefinition = tabs.find((tab) => tab.id === resolvedActiveTab) ?? tabs[0];
+  const activeMessages = resolvedActiveTab === 'main'
     ? session.messages
-    : (session.subAgentMessages?.[activeTab] ?? []);
+    : (session.subAgentMessages?.[resolvedActiveTab] ?? []);
+  const panelAccessibilityProps = shouldShowNav
+    ? { 'aria-labelledby': getSessionDetailTabId(resolvedActiveTab) }
+    : { 'aria-label': activeTabDefinition.label };
 
   return (
-    <div className="flex gap-4 items-start h-full">
+    <div className="flex min-w-0 items-start gap-3 h-full xl:gap-4">
       <div className="flex-1 min-w-0 flex flex-col h-full min-h-0">
         <SessionMeta session={session} />
 
-        <div className={`flex-1 min-h-0 rounded-lg border overflow-hidden flex flex-col ${modeBorderClass(session.currentMode)}`}>
-          {hasTabs && <TabBar tabs={tabs} activeId={activeTab} onChange={setActiveTab} />}
+        <div className={`flex-1 min-h-0 rounded-xl border overflow-hidden bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`}>
+          <div className="flex h-full min-h-0 min-w-0">
+            {shouldShowNav && (
+              <aside className="w-48 shrink-0 min-h-0 border-r border-gh-border bg-gh-surface/35 p-3 xl:w-56 2xl:w-60">
+                <SessionTabNav tabs={tabs} activeId={resolvedActiveTab} onChange={setActiveTab} />
+              </aside>
+            )}
 
-          {/* Plan */}
-          {activeTab === 'plan' && session.planContent && (
-            <PlanView content={session.planContent} isPending={session.isPlanPending} />
-          )}
+            <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+              <DetailPanelHeader tab={activeTabDefinition} session={session} />
 
-          {/* Todos */}
-          {activeTab === 'todos' && session.todos && (
-            <TodosView todos={session.todos} />
-          )}
+              <div
+                id={getSessionDetailPanelId(resolvedActiveTab)}
+                role="tabpanel"
+                className="flex-1 min-h-0 flex flex-col"
+                {...panelAccessibilityProps}
+              >
+                {resolvedActiveTab === 'plan' && session.planContent && (
+                  <PlanView content={session.planContent} isPending={session.isPlanPending} />
+                )}
 
-          {/* Messages + optional sub-agent context bar */}
-          {activeTab !== 'plan' && activeTab !== 'todos' && (
-            <>
-              {activeAgent && (
-                <div className="shrink-0 px-4 py-2 border-b border-gh-border bg-gh-surface/50 flex items-center gap-2 text-xs">
-                  <span className="text-gh-muted">Sub-agent</span>
-                  <span className="font-mono text-gh-text font-medium">{activeAgent.agentDisplayName || activeAgent.agentName}</span>
-                  {activeAgent.description && (
-                    <><span className="text-gh-border">·</span><span className="text-gh-muted truncate">{activeAgent.description}</span></>
-                  )}
-                  <span className="ml-auto shrink-0">
-                    {activeAgent.isCompleted
-                      ? <span className="inline-flex items-center gap-1 text-gh-muted"><span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />Done</span>
-                      : <span className="inline-flex items-center gap-1 text-gh-active"><span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />Running</span>
-                    }
-                  </span>
-                </div>
-              )}
-              <MessageList messages={activeMessages} />
-            </>
-          )}
+                {resolvedActiveTab === 'todos' && session.todos && (
+                  <TodosView todos={session.todos} />
+                )}
+
+                {resolvedActiveTab !== 'plan' && resolvedActiveTab !== 'todos' && (
+                  <MessageList messages={activeMessages} />
+                )}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
       <SessionSidebar currentId={id ?? ''} currentProjectPath={session.projectPath} sessions={sessions} />
