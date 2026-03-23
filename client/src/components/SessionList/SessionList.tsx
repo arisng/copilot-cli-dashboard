@@ -135,16 +135,20 @@ export function SessionList() {
         <div className="flex items-center gap-3">
           <div className="flex items-center border border-gh-border rounded overflow-hidden">
             <button
+              type="button"
               onClick={() => toggleView('list')}
               title="List view"
-              className={`px-2 py-1.5 transition-colors ${viewMode === 'list' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
+              aria-pressed={viewMode === 'list'}
+              className={`px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gh-accent/40 ${viewMode === 'list' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
             >
               <ListIcon active={viewMode === 'list'} />
             </button>
             <button
+              type="button"
               onClick={() => toggleView('grid')}
               title="Grid view"
-              className={`px-2 py-1.5 border-l border-gh-border transition-colors ${viewMode === 'grid' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
+              aria-pressed={viewMode === 'grid'}
+              className={`border-l border-gh-border px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gh-accent/40 ${viewMode === 'grid' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
             >
               <GridIcon active={viewMode === 'grid'} />
             </button>
@@ -243,7 +247,7 @@ export function SessionList() {
           <button
             type="button"
             onClick={resetBrowse}
-            className="mt-3 rounded-md border border-gh-border bg-gh-bg px-3 py-1.5 text-xs text-gh-text transition-colors hover:bg-gh-surface"
+            className="mt-3 rounded-md border border-gh-border bg-gh-bg px-3 py-1.5 text-xs text-gh-text transition-colors hover:bg-gh-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-bg"
           >
             Reset filters
           </button>
@@ -253,14 +257,13 @@ export function SessionList() {
       {browse.totalItems > 0 && (
         <>
           {viewMode === 'list' ? (
-            <div className="rounded-lg border border-gh-border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="max-w-full overflow-hidden rounded-lg border border-gh-border">
+              <table className="w-full table-fixed text-sm">
                 <thead>
                   <tr className="border-b border-gh-border bg-gh-surface">
-                    <th className="py-2 px-4 text-left text-gh-muted text-xs font-medium">Session</th>
-                    <th className="py-2 px-4 text-left text-gh-muted text-xs font-medium hidden sm:table-cell">Project</th>
-                    <th className="py-2 px-4 text-right text-gh-muted text-xs font-medium hidden md:table-cell">Duration</th>
-                    <th className="py-2 px-4 text-right text-gh-muted text-xs font-medium">Last activity</th>
+                    <th className="w-[38%] px-4 py-2 text-left text-xs font-medium text-gh-muted">Session</th>
+                    <th className="w-[37%] px-4 py-2 text-left text-xs font-medium text-gh-muted">Context</th>
+                    <th className="w-[21%] px-4 py-2 text-right text-xs font-medium text-gh-muted">Activity</th>
                     <th className="py-2 px-4" />
                   </tr>
                 </thead>
@@ -272,7 +275,7 @@ export function SessionList() {
               </table>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
               {browse.paginatedSessions.map((session) => (
                 <SessionCard key={session.id} session={session} />
               ))}

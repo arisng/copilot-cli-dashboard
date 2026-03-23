@@ -1,48 +1,39 @@
+import type { KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SessionSummary, MessagePreview } from '../../api/client.ts';
 import { getProjectLabel } from '../../hooks/useSessionBrowse.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
-import { AttentionBadge } from './AttentionBadge.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
+import { SessionStatusBadge } from './SessionStatusBadge.tsx';
 
 interface Props {
   session: SessionSummary;
 }
 
-function StatusBadge({ session }: { session: SessionSummary }) {
-  if (session.needsAttention) return <AttentionBadge />;
-  if (session.isPlanPending) return (
-    <span className="inline-flex items-center gap-1 text-xs text-gh-attention">
-      <span className="w-1.5 h-1.5 rounded-full bg-gh-attention animate-pulse" />
-      Plan review
-    </span>
+function InfoBlock({
+  label,
+  value,
+  secondary,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  secondary?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-gh-border/70 bg-gh-bg/70 px-3 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gh-muted/70">{label}</p>
+      <p className={`mt-1 truncate text-xs font-semibold text-gh-text ${mono ? 'font-mono' : ''}`} title={value}>
+        {value}
+      </p>
+      {secondary && (
+        <p className="mt-0.5 truncate text-[11px] text-gh-muted" title={secondary}>
+          {secondary}
+        </p>
+      )}
+    </div>
   );
-  if (session.isWorking) return (
-    <span className="inline-flex items-center gap-1 text-xs text-gh-active">
-      <span className="w-1.5 h-1.5 rounded-full bg-gh-active animate-pulse" />
-      Working
-    </span>
-  );
-  if (session.isTaskComplete) return (
-    <span className="inline-flex items-center gap-1 text-xs text-gh-active">
-      <span className="w-1.5 h-1.5 rounded-full bg-gh-active" />
-      Task complete
-    </span>
-  );
-  if (session.isAborted) return (
-    <span className="inline-flex items-center gap-1 text-xs text-gh-muted">
-      <span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />
-      Aborted
-    </span>
-  );
-  if (session.isIdle) return (
-    <span className="inline-flex items-center gap-1 text-xs text-gh-muted">
-      <span className="w-1.5 h-1.5 rounded-full bg-gh-muted" />
-      Idle
-    </span>
-  );
-  if (!session.isOpen) return <span className="text-xs text-gh-muted">Closed</span>;
-  return null;
 }
 
 // Matches the label + color scheme from MessageBubble.tsx
@@ -75,7 +66,7 @@ function toolMeta(name: string) {
 function ToolChip({ name, count }: { name: string; count?: number }) {
   const meta = toolMeta(name);
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-mono rounded px-1.5 py-0 border ${meta.border} bg-gh-bg`}>
+    <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-mono ${meta.border} bg-gh-bg`}>
       <span className={`w-1 h-1 rounded-full shrink-0 ${meta.dot}`} />
       <span className={meta.text}>{meta.label}</span>
       {count && count > 1 && <span className="text-gh-muted">×{count}</span>}
@@ -122,8 +113,8 @@ function LastMessage({ message }: { message: MessagePreview }) {
                 if (existing) existing.count++;
                 else counts.set(label, { name, count: 1 });
               }
-              const entries = [...counts.values()].slice(0, 5);
-              const overflow = counts.size - 5;
+              const entries = [...counts.values()].slice(0, 3);
+              const overflow = counts.size - 3;
               return (
                 <>
                   {entries.map(({ name, count }) => (
@@ -147,13 +138,30 @@ export function SessionCard({ session }: Props) {
   const previews = session.previewMessages ?? [];
   const lastMessage = previews[previews.length - 1];
   const activeAgents = session.activeSubAgents.filter((a) => !a.isCompleted);
+  const showPreview = Boolean(lastMessage) && (session.needsAttention || session.isWorking || session.isPlanPending || activeAgents.length > 0);
+
+  function openSession() {
+    navigate(`/sessions/${session.id}`);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openSession();
+    }
+  }
 
   return (
     <div
-      onClick={() => navigate(`/sessions/${session.id}`)}
+      onClick={openSession}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      role="link"
+      aria-label={`Open session ${session.title}`}
       className={`
         bg-gh-surface rounded-lg cursor-pointer transition-colors
         flex flex-col overflow-hidden
+        focus-visible:bg-gh-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-bg
         ${session.needsAttention
           ? 'border border-gh-attention/60 hover:border-gh-attention/80'
           : session.isWorking
@@ -162,71 +170,73 @@ export function SessionCard({ session }: Props) {
         }
       `}
     >
-      {/* Header */}
+      <div className="px-4 pt-3 pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <SessionStatusBadge session={session} pulse={false} />
+          <RelativeTime
+            timestamp={session.lastActivityAt}
+            className="shrink-0 text-xs font-semibold tabular-nums text-gh-text/85"
+          />
+        </div>
 
-      <div className="px-4 pt-3 pb-2">
-        <p className="text-gh-text font-medium text-sm leading-snug line-clamp-2">
+        <p className="mt-2 text-gh-text text-sm font-semibold leading-5 line-clamp-2">
           {session.title}
         </p>
-        {/* Meta row */}
-        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-          <span className="text-gh-muted text-xs font-mono" title={session.projectPath}>
-            {getProjectLabel(session.projectPath)}
-          </span>
-          {session.gitBranch && (
-            <>
-              <span className="text-gh-border text-xs">·</span>
-              <span className="text-gh-accent text-xs font-mono truncate max-w-[140px]">
-                {session.gitBranch}
-              </span>
-            </>
-          )}
-          <span className="text-gh-border text-xs">·</span>
-          <span className="text-gh-muted text-xs tabular-nums">
-            {formatDuration(session.durationMs)}
-          </span>
-          <span className="text-gh-border text-xs">·</span>
-          <StatusBadge session={session} />
-          <ModeBadge mode={session.currentMode} />
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <InfoBlock
+            label="Project"
+            value={getProjectLabel(session.projectPath)}
+            secondary={session.gitBranch ?? 'No git branch'}
+            mono
+          />
+          <InfoBlock
+            label="Activity"
+            value={formatDuration(session.durationMs)}
+            secondary={activeAgents.length > 0
+              ? `${activeAgents.length} active agent${activeAgents.length === 1 ? '' : 's'}`
+              : `${session.messageCount} msg${session.messageCount === 1 ? '' : 's'}`}
+          />
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <ModeBadge mode={session.currentMode} className="rounded-full px-2 py-0.5 text-[10px]" />
           {session.model && (
-            <span className="text-gh-muted/60 text-xs font-mono">{session.model}</span>
+            <span className="inline-flex max-w-full items-center truncate rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-0.5 text-[11px] font-mono text-gh-muted" title={session.model}>
+              {session.model}
+            </span>
           )}
         </div>
       </div>
 
       {/* Last message bubble */}
-      {lastMessage && (
-        <div className="border-t border-gh-border/50 px-4 py-2.5">
+      {showPreview && lastMessage && (
+        <div className="border-t border-gh-border/50 px-4 py-2">
           <LastMessage message={lastMessage} />
         </div>
       )}
 
-      {/* Footer: sub-agent badges + time */}
-      <div className="border-t border-gh-border/50 px-4 py-2 flex items-center justify-between gap-2 mt-auto">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {activeAgents.slice(0, 3).map((agent) => (
+      {activeAgents.length > 0 && (
+        <div className="mt-auto border-t border-gh-border/50 px-4 py-2">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.18em] text-gh-muted/70">
+            Active sub-agents
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {activeAgents.slice(0, 2).map((agent) => (
             <span
               key={agent.toolCallId}
-              className="inline-flex items-center gap-1 text-[10px] font-mono bg-gh-bg border border-gh-border rounded-full px-2 py-0.5 text-gh-accent"
+              className="inline-flex items-center gap-1 rounded-full border border-gh-border bg-gh-bg px-2 py-0.5 text-[10px] font-mono text-gh-accent"
             >
               <span className="w-1 h-1 rounded-full bg-gh-active animate-pulse" />
               {agent.agentDisplayName || agent.agentName}
             </span>
-          ))}
-          {activeAgents.length > 3 && (
-            <span className="text-xs text-gh-muted">+{activeAgents.length - 3}</span>
-          )}
-          {activeAgents.length === 0 && (
-            <span className="text-[10px] text-gh-muted tabular-nums">
-              {session.messageCount} msg{session.messageCount !== 1 ? 's' : ''}
-            </span>
-          )}
+            ))}
+            {activeAgents.length > 2 && (
+              <span className="text-[11px] text-gh-muted">+{activeAgents.length - 2} more</span>
+            )}
+          </div>
         </div>
-        <RelativeTime
-          timestamp={session.lastActivityAt}
-          className="text-gh-muted text-xs tabular-nums shrink-0"
-        />
-      </div>
+      )}
     </div>
   );
 }
