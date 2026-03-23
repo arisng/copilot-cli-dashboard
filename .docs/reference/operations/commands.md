@@ -10,12 +10,12 @@ This page lists the primary commands exposed by the repository.
 
 ## Running from npm
 
-- `npx copiloting-agents` — download and run the published package on port 3001
+- `npx copiloting-agents` — download and run the published package on port 3001, or the next free port if 3001 is busy and `PORT` is unset
 - `PORT=8080 npx copiloting-agents` — run the published package on a custom port
 
 ## Production hosting
 
-- `npm start` — build and serve the compiled app from a single port
+- `npm start` — build and serve the compiled app from a single port; auto-select the next free port when 3001 is busy and `PORT` is unset
 - `PORT=8080 npm start` — serve production output on a custom port
 - `npm run tunnel:prod` — expose the production server through Dev Tunnels after the server is already listening
 

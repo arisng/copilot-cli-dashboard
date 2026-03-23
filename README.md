@@ -12,7 +12,7 @@ A local web dashboard for [Copilot CLI](https://github.com/github/copilot-cli) t
 npx copiloting-agents
 ```
 
-Then open **http://localhost:3001** in your browser. No install, no config.
+Then open the URL shown in the terminal, usually **http://localhost:3001**. If port 3001 is already in use and you did not set `PORT`, the server automatically picks the next free port and prints it for you. No install, no config.
 
 Desktop routes stay at `/` and `/sessions/:id`. The dedicated mobile namespace is available at `/m` and `/m/sessions/:id`.
 
@@ -178,21 +178,21 @@ Keep both server and client running on your laptop, then open the tunnel URL fro
 
 ### Production mode
 
-Expose the single production server on port 3001:
+Expose the single production server on port 3001 by default:
 
 ```bash
 npm start
 npm run tunnel:prod
 ```
 
-`npm run tunnel:prod` now runs a quick preflight against `http://localhost:3001/api/health` and exits with a clear reminder to start the production server first if nothing is listening yet. This uses the built client that Express serves from `client/dist`, so the phone opens the same dashboard without running Vite separately.
+`npm run tunnel:prod` now runs a quick preflight against the configured production port (`http://localhost:3001/api/health` by default) and exits with a clear reminder to start the production server first if nothing is listening yet. This uses the built client that Express serves from `client/dist`, so the phone opens the same dashboard without running Vite separately. If `npm start` auto-selected a different port because 3001 was busy, pass that same `PORT` value to `npm run tunnel:prod`.
 
 ### Fixed Dev Tunnel IDs (recommended)
 
 To avoid random temp URLs, this repo uses fixed tunnel IDs so you can run the tunnel command without extra args:
 
 - dev UI: `copiloting-agents-client` (port 5173)
-- prod server: `copiloting-agents-prod` (port 3001)
+- prod server: `copiloting-agents-prod` (port 3001 by default)
 
 #### Dev tunnel command (desktop UI)
 
@@ -273,7 +273,7 @@ If the package is published to npm, anyone can run it with no installation step:
 npx copiloting-agents
 ```
 
-This downloads the pre-built package and starts the server at **http://localhost:3001**.
+This downloads the pre-built package and starts the server at **http://localhost:3001** by default. If port 3001 is already in use and `PORT` is unset, it automatically uses the next free port and prints the exact URL.
 
 To use a different port:
 
@@ -287,12 +287,12 @@ Run a single command after `npm install` — no `npm run dev`, no separate clien
 
 ```bash
 npm install   # one-time setup
-npm start     # build + serve on http://localhost:3001
+npm start     # build + serve on http://localhost:3001 (or the next free port if 3001 is busy)
 ```
 
-`npm start` compiles the TypeScript server, builds the Vite client, then launches Express which serves the built client as static files alongside the API. Everything runs on a single port.
+`npm start` compiles the TypeScript server, builds the Vite client, then launches Express which serves the built client as static files alongside the API. Everything runs on a single port. When `PORT` is unset and 3001 is already occupied, the server automatically selects the next free port and prints the chosen URL in the startup banner.
 
-To make that production server reachable from your phone while you are away from your local network, run `npm run tunnel:prod` in a second terminal after `npm start`. If you use a custom `PORT`, run both commands with the same port value so the preflight check and Dev Tunnel target stay aligned.
+To make that production server reachable from your phone while you are away from your local network, run `npm run tunnel:prod` in a second terminal after `npm start`. If you use a custom `PORT` or the default port was auto-shifted because 3001 was busy, run both commands with the same port value so the preflight check and Dev Tunnel target stay aligned.
 
 ### Manual build steps
 

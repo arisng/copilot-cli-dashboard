@@ -16,7 +16,7 @@ Express 4 + TypeScript powers the API server, and the dev server runs with `tsx 
 - `src/sessionTypes.ts` — raw event types and normalised API types
 - `src/utils/needsAttention.ts` — event-driven status detection
 - `src/router.ts` — Express route handlers
-- `src/index.ts` — server entry, port 3001
+- `src/index.ts` — server entry, default port 3001 with auto-fallback to the next free port when run by production startup scripts with `PORT` unset
 
 ## Session parsing rules
 

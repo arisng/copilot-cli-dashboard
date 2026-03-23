@@ -19,7 +19,7 @@ Use this when you want to inspect active Copilot CLI sessions from a mobile brow
    HOST=0.0.0.0 PORT=5173 npm run dev
    ```
 
-   If you are using the production server instead, bind that process in the same way:
+   If you are using the production server instead, bind that process with an explicit `PORT` value so the phone URL stays predictable:
 
    ```bash
    HOST=0.0.0.0 PORT=3001 npm start
@@ -28,7 +28,7 @@ Use this when you want to inspect active Copilot CLI sessions from a mobile brow
 2. On your phone, open the matching URL:
 
    - `http://<PC_IP>:5173` for the development client
-   - `http://<PC_IP>:3001` for the production server
+   - `http://<PC_IP>:<PORT>` for the production server, using the same port you passed to `npm start` or the port printed in the startup banner if it auto-selected a free one
 
 3. If the page does not load, confirm that your firewall allows inbound traffic on the chosen port.
 

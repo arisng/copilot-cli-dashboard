@@ -21,7 +21,7 @@ Use this when you want the repository to run in production mode from source inst
 
 2. Wait for the build to finish and for Express to start listening.
 
-3. Open `http://localhost:3001` in your browser.
+3. Open the URL shown in the startup banner. It is `http://localhost:3001` by default, but if 3001 is already in use and you did not set `PORT`, the server automatically selects the next free port and prints it.
 
 4. If you need a different port, set `PORT` before starting the server.
 

@@ -13,9 +13,9 @@ Originally scripts used `devtunnel host --subdomain <name>` and/or `devtunnel ho
 
 ### workflow
 
-1. Preflight local server on `http://127.0.0.1:3001/api/health` (production) with retry.
+1. Preflight the configured production server port on `http://127.0.0.1:<PORT>/api/health` (defaults to 3001) with retry.
 2. Create or reuse tunnel ID: `copiloting-agents-prod` (or `DEVTUNNEL_TUNNEL_ID` override).
-3. Create or reuse port mapping: `devtunnel port create <tunnelId> -p 3001`.
+3. Create or reuse port mapping: `devtunnel port create <tunnelId> -p <PORT>`.
 4. Host tunnel: `devtunnel host <tunnelId>`.
 
 Client script uses `copiloting-agents-client` and port 5173.
@@ -33,4 +33,5 @@ Client script uses `copiloting-agents-client` and port 5173.
 ## Notes
 
 - If a tunnel or port already exists, command status 1 is tolerated and workflow continues.
+- If `npm start` auto-selected a different port because 3001 was busy, set `PORT` explicitly before running the tunnel so the preflight and tunnel mapping stay aligned.
 - The devtunnel service status may show `ClientSSH: ... window is full` while active; this is acceptable as long as the tunnel is up.
