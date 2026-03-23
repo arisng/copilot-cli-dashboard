@@ -1,15 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import type { SessionSummary, MessagePreview } from '../../api/client.ts';
+import { getProjectLabel } from '../../hooks/useSessionBrowse.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { AttentionBadge } from './AttentionBadge.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 
 interface Props {
   session: SessionSummary;
-}
-
-function lastPathSegment(p: string): string {
-  return p.split('/').filter(Boolean).pop() ?? p;
 }
 
 function StatusBadge({ session }: { session: SessionSummary }) {
@@ -174,7 +171,7 @@ export function SessionCard({ session }: Props) {
         {/* Meta row */}
         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
           <span className="text-gh-muted text-xs font-mono" title={session.projectPath}>
-            {lastPathSegment(session.projectPath)}
+            {getProjectLabel(session.projectPath)}
           </span>
           {session.gitBranch && (
             <>

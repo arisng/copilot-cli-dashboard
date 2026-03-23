@@ -1,16 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SessionSummary, ActiveSubAgent } from '../../api/client.ts';
+import { getProjectLabel } from '../../hooks/useSessionBrowse.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { AttentionBadge } from './AttentionBadge.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 
 interface Props {
   session: SessionSummary;
-}
-
-function lastPathSegment(p: string): string {
-  return p.split('/').filter(Boolean).pop() ?? p;
 }
 
 function CopyBranch({ branch }: { branch: string }) {
@@ -168,7 +165,7 @@ export function SessionRow({ session }: Props) {
               className="text-gh-muted text-xs font-mono"
               title={session.projectPath}
             >
-              {lastPathSegment(session.projectPath)}
+              {getProjectLabel(session.projectPath)}
             </span>
             {session.gitBranch && <CopyBranch branch={session.gitBranch} />}
           </div>

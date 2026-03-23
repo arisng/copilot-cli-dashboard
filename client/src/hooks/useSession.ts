@@ -13,8 +13,10 @@ export function useSession(id: string) {
       setCachedSession(id, data);
       setSession(data);
       setError(null);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -29,9 +31,28 @@ export function useSession(id: string) {
     } else {
       setLoading(true);
     }
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
+
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    const schedule = (delayMs: number) => {
+      timeoutId = window.setTimeout(async () => {
+        if (cancelled) return;
+        const ok = await load();
+        if (!cancelled) {
+          schedule(ok ? 5000 : 1000);
+        }
+      }, delayMs);
+    };
+
+    schedule(1000);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [id, load]);
 
   return { session, loading, error };

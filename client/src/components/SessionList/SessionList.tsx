@@ -1,6 +1,20 @@
 import { useState } from 'react';
 import { useSessions } from '../../hooks/useSessions.ts';
+import {
+  DEFAULT_SESSION_BROWSE_STATE,
+  SESSION_BROWSE_SORT_FIELDS,
+  SESSION_BROWSE_STATUS_OPTIONS,
+  type SessionBrowseSortField,
+  type SessionBrowseStatus,
+  useSessionBrowse,
+} from '../../hooks/useSessionBrowse.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
+import {
+  BrowsePagination,
+  BrowseSelect,
+  BrowseSortOrderToggle,
+  SESSION_BROWSE_SORT_FIELD_LABELS,
+} from '../shared/SessionBrowseControls.tsx';
 import { SessionRow } from './SessionRow.tsx';
 import { SessionCard } from './SessionCard.tsx';
 
@@ -20,37 +34,105 @@ function GridIcon({ active }: { active: boolean }) {
   );
 }
 
+const MAIN_LIST_PAGE_SIZE = 25;
+
 export function SessionList() {
   const { sessions, loading, error } = useSessions();
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(
-    () => (localStorage.getItem('sessionViewMode') as 'list' | 'grid') ?? 'list'
+    () => (localStorage.getItem('sessionViewMode') as 'list' | 'grid') ?? 'list',
   );
+  const [browseState, setBrowseState] = useState(() => ({
+    ...DEFAULT_SESSION_BROWSE_STATE,
+    pageSize: MAIN_LIST_PAGE_SIZE,
+  }));
 
   function toggleView(mode: 'list' | 'grid') {
     setViewMode(mode);
     localStorage.setItem('sessionViewMode', mode);
   }
 
-  const activeSessions = sessions.filter((s) => s.isOpen);
-  const attentionCount = activeSessions.filter((s) => s.needsAttention).length;
+  const activeSessions = sessions.filter((session) => session.isOpen);
+  const browse = useSessionBrowse(activeSessions, browseState);
+  const shownAttentionCount = browse.filteredSessions.filter((session) => session.needsAttention).length;
+  const countLabel = browse.totalItems === activeSessions.length
+    ? `${browse.totalItems} open session${browse.totalItems !== 1 ? 's' : ''}`
+    : `${browse.totalItems} of ${activeSessions.length} open sessions`;
+
+  function handleProjectChange(value: string) {
+    setBrowseState((previous) => ({
+      ...previous,
+      projectPath: value || null,
+      branch: null,
+      page: 1,
+    }));
+  }
+
+  function handleBranchChange(value: string) {
+    setBrowseState((previous) => ({
+      ...previous,
+      branch: value || null,
+      page: 1,
+    }));
+  }
+
+  function handleStatusChange(value: string) {
+    setBrowseState((previous) => ({
+      ...previous,
+      status: value ? (value as SessionBrowseStatus) : null,
+      page: 1,
+    }));
+  }
+
+  function handleSortFieldChange(value: string) {
+    setBrowseState((previous) => ({
+      ...previous,
+      sortField: value as SessionBrowseSortField,
+      page: 1,
+    }));
+  }
+
+  function handleSortOrderChange(value: 'asc' | 'desc') {
+    setBrowseState((previous) => ({
+      ...previous,
+      sortOrder: value,
+      page: 1,
+    }));
+  }
+
+  function handlePageChange(page: number) {
+    setBrowseState((previous) => ({
+      ...previous,
+      page,
+    }));
+  }
+
+  function resetBrowse() {
+    setBrowseState((previous) => ({
+      ...previous,
+      projectPath: null,
+      branch: null,
+      status: null,
+      sortField: DEFAULT_SESSION_BROWSE_STATE.sortField,
+      sortOrder: DEFAULT_SESSION_BROWSE_STATE.sortOrder,
+      page: 1,
+    }));
+  }
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-gh-text">Sessions</h1>
           <p className="text-gh-muted text-sm">
-            {activeSessions.length} session{activeSessions.length !== 1 ? 's' : ''}
-            {attentionCount > 0 && (
+            {countLabel}
+            {shownAttentionCount > 0 && (
               <span className="text-gh-attention ml-2">
-                · {attentionCount} need{attentionCount !== 1 ? '' : 's'} attention
+                · {shownAttentionCount} need{shownAttentionCount !== 1 ? '' : 's'} attention
               </span>
             )}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* View toggle */}
           <div className="flex items-center border border-gh-border rounded overflow-hidden">
             <button
               onClick={() => toggleView('list')}
@@ -67,7 +149,6 @@ export function SessionList() {
               <GridIcon active={viewMode === 'grid'} />
             </button>
           </div>
-          {/* Auto-refresh indicator */}
           <div className="flex items-center gap-2 text-gh-muted text-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-gh-active" />
             Auto-refresh 5s
@@ -75,7 +156,64 @@ export function SessionList() {
         </div>
       </div>
 
-      {/* States */}
+      {activeSessions.length > 0 && (
+        <div className="mb-4 rounded-lg border border-gh-border bg-gh-surface/30 p-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <BrowseSelect
+              label="Project"
+              value={browse.projectPath ?? ''}
+              onChange={handleProjectChange}
+              options={[
+                { value: '', label: 'All projects' },
+                ...browse.projectOptions.map((option) => ({
+                  value: option.value,
+                  label: `${option.label} (${option.count})`,
+                })),
+              ]}
+              className="min-w-[180px] flex-1 sm:flex-none"
+            />
+            <BrowseSelect
+              label="Branch"
+              value={browse.branch ?? ''}
+              onChange={handleBranchChange}
+              disabled={browse.projectPath === null}
+              options={[
+                { value: '', label: browse.projectPath ? 'All branches' : 'Select project first' },
+                ...browse.branchOptions.map((option) => ({
+                  value: option.value,
+                  label: `${option.label} (${option.count})`,
+                })),
+              ]}
+              className="min-w-[170px] flex-1 sm:flex-none"
+            />
+            <BrowseSelect
+              label="Status"
+              value={browse.status ?? ''}
+              onChange={handleStatusChange}
+              options={[
+                { value: '', label: 'All statuses' },
+                ...SESSION_BROWSE_STATUS_OPTIONS.map((status) => ({
+                  value: status,
+                  label: status,
+                })),
+              ]}
+              className="min-w-[150px] flex-1 sm:flex-none"
+            />
+            <BrowseSelect
+              label="Sort"
+              value={browseState.sortField}
+              onChange={handleSortFieldChange}
+              options={SESSION_BROWSE_SORT_FIELDS.map((field) => ({
+                value: field,
+                label: SESSION_BROWSE_SORT_FIELD_LABELS[field],
+              }))}
+              className="min-w-[180px] flex-1 sm:flex-none"
+            />
+            <BrowseSortOrderToggle value={browseState.sortOrder} onChange={handleSortOrderChange} />
+          </div>
+        </div>
+      )}
+
       {loading && activeSessions.length === 0 && <LoadingSpinner />}
 
       {error && (
@@ -87,41 +225,70 @@ export function SessionList() {
       {!loading && activeSessions.length === 0 && !error && (
         <div className="rounded-lg border border-gh-border bg-gh-surface p-8 text-center">
           <p className="text-gh-muted text-sm">
-            No sessions found in <code className="font-mono text-xs bg-gh-bg px-1 rounded">~/.copilot/session-state/</code>
+            {sessions.length === 0
+              ? 'No sessions found in the detected Copilot session-state directories.'
+              : 'No open sessions right now.'}
           </p>
           <p className="text-gh-muted text-xs mt-2">
-            Start a Copilot CLI session and it will appear here automatically.
+            {sessions.length === 0
+              ? 'Start a Copilot CLI session and it will appear here automatically.'
+              : 'Start or resume a session and it will appear here automatically.'}
           </p>
         </div>
       )}
 
-      {activeSessions.length > 0 && (
-        viewMode === 'list' ? (
-          <div className="rounded-lg border border-gh-border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gh-border bg-gh-surface">
-                  <th className="py-2 px-4 text-left text-gh-muted text-xs font-medium">Session</th>
-                  <th className="py-2 px-4 text-left text-gh-muted text-xs font-medium hidden sm:table-cell">Project</th>
-                  <th className="py-2 px-4 text-right text-gh-muted text-xs font-medium hidden md:table-cell">Duration</th>
-                  <th className="py-2 px-4 text-right text-gh-muted text-xs font-medium">Last activity</th>
-                  <th className="py-2 px-4" />
-                </tr>
-              </thead>
-              <tbody>
-                {activeSessions.map((session) => (
-                  <SessionRow key={session.id} session={session} />
-                ))}
-              </tbody>
-            </table>
+      {activeSessions.length > 0 && browse.totalItems === 0 && !error && (
+        <div className="rounded-lg border border-gh-border bg-gh-surface p-8 text-center">
+          <p className="text-gh-muted text-sm">No open sessions match the current filters.</p>
+          <button
+            type="button"
+            onClick={resetBrowse}
+            className="mt-3 rounded-md border border-gh-border bg-gh-bg px-3 py-1.5 text-xs text-gh-text transition-colors hover:bg-gh-surface"
+          >
+            Reset filters
+          </button>
+        </div>
+      )}
+
+      {browse.totalItems > 0 && (
+        <>
+          {viewMode === 'list' ? (
+            <div className="rounded-lg border border-gh-border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gh-border bg-gh-surface">
+                    <th className="py-2 px-4 text-left text-gh-muted text-xs font-medium">Session</th>
+                    <th className="py-2 px-4 text-left text-gh-muted text-xs font-medium hidden sm:table-cell">Project</th>
+                    <th className="py-2 px-4 text-right text-gh-muted text-xs font-medium hidden md:table-cell">Duration</th>
+                    <th className="py-2 px-4 text-right text-gh-muted text-xs font-medium">Last activity</th>
+                    <th className="py-2 px-4" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {browse.paginatedSessions.map((session) => (
+                    <SessionRow key={session.id} session={session} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {browse.paginatedSessions.map((session) => (
+                <SessionCard key={session.id} session={session} />
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3 rounded-lg border border-gh-border bg-gh-surface/20 px-4 py-3">
+            <BrowsePagination
+              page={browse.page}
+              totalPages={browse.totalPages}
+              totalItems={browse.totalItems}
+              pageSize={browse.pageSize}
+              onPageChange={handlePageChange}
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {activeSessions.map((session) => (
-              <SessionCard key={session.id} session={session} />
-            ))}
-          </div>
-        )
+        </>
       )}
     </div>
   );

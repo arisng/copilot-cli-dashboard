@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link, useLocation, useMatch } from 'react-router-dom';
 import { checkHealth } from '../../api/client.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import { useNotifications, useSessionNotifications } from '../../hooks/useNotifications.ts';
@@ -10,17 +11,34 @@ interface Props {
 export function Layout({ children }: Props) {
   const [serverOk, setServerOk] = useState(true);
   const { sessions } = useSessions();
-  const { permission, request } = useNotifications();
-  useSessionNotifications(sessions, permission === 'granted');
+  const { permission, request, markUnavailable } = useNotifications();
+  const { pathname } = useLocation();
+  const detailMatch = useMatch('/sessions/:id');
+  const mobileHref = detailMatch?.params.id ? `/m/sessions/${detailMatch.params.id}` : '/m';
+  const showMobileSwitch = pathname === '/' || detailMatch !== null;
+  useSessionNotifications(sessions, permission, markUnavailable);
 
   useEffect(() => {
-    async function ping() {
-      const ok = await checkHealth();
-      setServerOk(ok);
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    async function ping(delayMs: number) {
+      timeoutId = window.setTimeout(async () => {
+        const ok = await checkHealth();
+        if (cancelled) return;
+        setServerOk(ok);
+        ping(ok ? 10000 : 2000);
+      }, delayMs);
     }
-    ping();
-    const interval = setInterval(ping, 10000);
-    return () => clearInterval(interval);
+
+    ping(1000);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, []);
 
   return (
@@ -56,9 +74,41 @@ export function Layout({ children }: Props) {
                 Notifications blocked
               </span>
             )}
+            {permission === 'unavailable' && (
+              <span
+                className="text-xs text-gh-muted"
+                title="Notifications are unavailable in this browser, device, or tunnel context"
+              >
+                Notifications unavailable
+              </span>
+            )}
           </div>
         </div>
       </header>
+
+      {showMobileSwitch && (
+        <div className="border-b border-gh-border bg-gh-surface/80 md:hidden">
+          <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gh-text">
+                {detailMatch ? 'Prefer the touch-first session view?' : 'On a phone?'}
+              </p>
+              <p className="text-xs text-gh-muted">
+                {detailMatch
+                  ? 'Switch this session to the matching mobile route.'
+                  : 'Try the dedicated mobile experience at /m.'}
+              </p>
+            </div>
+
+            <Link
+              to={mobileHref}
+              className="shrink-0 rounded-full border border-gh-accent/30 bg-gh-accent/10 px-3 py-1.5 text-xs font-medium text-gh-accent transition-colors hover:bg-gh-accent/15"
+            >
+              Open mobile
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Server down banner */}
       {!serverOk && (

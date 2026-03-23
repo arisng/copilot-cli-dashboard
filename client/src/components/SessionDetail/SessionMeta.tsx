@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SessionDetail } from '../../api/client.ts';
+import { getProjectLabel } from '../../hooks/useSessionBrowse.ts';
 import { formatDuration } from '../shared/RelativeTime.tsx';
 import { AttentionBadge } from '../SessionList/AttentionBadge.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
@@ -96,7 +97,7 @@ export function SessionMeta({ session }: Props) {
       <div className="flex items-center mt-3 text-xs text-gh-muted">
         <div className="flex items-center gap-2">
           <span className="font-mono" title={session.projectPath}>
-            {session.projectPath.split('/').filter(Boolean).pop() ?? session.projectPath}
+            {getProjectLabel(session.projectPath)}
           </span>
           <ModeBadge mode={session.currentMode} />
           {session.model && (

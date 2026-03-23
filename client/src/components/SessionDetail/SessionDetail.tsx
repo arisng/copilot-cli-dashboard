@@ -1,11 +1,28 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
 import { useSession } from '../../hooks/useSession.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
+import {
+  DEFAULT_SESSION_BROWSE_STATE,
+  SESSION_BROWSE_SORT_FIELDS,
+  SESSION_BROWSE_STATUS_OPTIONS,
+  getProjectLabel,
+  normalizeProjectPathForComparison,
+  paginateSessionsForBrowse,
+  type SessionBrowseSortField,
+  type SessionBrowseStatus,
+  useSessionBrowse,
+} from '../../hooks/useSessionBrowse.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
+import {
+  BrowsePagination,
+  BrowseSelect,
+  BrowseSortOrderToggle,
+  SESSION_BROWSE_SORT_FIELD_LABELS,
+} from '../shared/SessionBrowseControls.tsx';
 import { SessionMeta } from './SessionMeta.tsx';
 import { modeBorderClass } from '../shared/modeBadge.tsx';
 import { MessageBubble } from './MessageBubble.tsx';
@@ -294,8 +311,55 @@ function MessageList({ messages }: { messages: ParsedMessage[] }) {
 
 // ── Sessions sidebar ───────────────────────────────────────────────────────
 
-function SessionSidebar({ currentId, sessions }: { currentId: string; sessions: SessionSummary[] }) {
+const SIDEBAR_PAGE_SIZE = 10;
+
+function SessionSidebar({
+  currentId,
+  currentProjectPath,
+  sessions,
+}: {
+  currentId: string;
+  currentProjectPath: string;
+  sessions: SessionSummary[];
+}) {
   const navigate = useNavigate();
+  const currentProjectKey = useMemo(
+    () => normalizeProjectPathForComparison(currentProjectPath),
+    [currentProjectPath],
+  );
+  const currentProjectSessions = useMemo(
+    () => sessions.filter((session) => normalizeProjectPathForComparison(session.projectPath) === currentProjectKey),
+    [currentProjectKey, sessions],
+  );
+  const [browseState, setBrowseState] = useState(() => ({
+    ...DEFAULT_SESSION_BROWSE_STATE,
+    projectPath: currentProjectPath,
+    pageSize: SIDEBAR_PAGE_SIZE,
+  }));
+
+  useEffect(() => {
+    setBrowseState((previous) => ({
+      ...previous,
+      projectPath: currentProjectPath,
+      branch: normalizeProjectPathForComparison(previous.projectPath ?? '') === currentProjectKey
+        ? previous.branch
+        : null,
+      page: 1,
+    }));
+  }, [currentProjectKey, currentProjectPath]);
+
+  const browse = useSessionBrowse(currentProjectSessions, browseState);
+  const groupedSessions = useMemo(() => {
+    const openSessions = browse.filteredSessions.filter((session) => session.isOpen);
+    const closedSessions = browse.filteredSessions.filter((session) => !session.isOpen);
+    return [...openSessions, ...closedSessions];
+  }, [browse.filteredSessions]);
+  const pagination = useMemo(
+    () => paginateSessionsForBrowse(groupedSessions, browse.page, browse.pageSize),
+    [browse.page, browse.pageSize, groupedSessions],
+  );
+  const open = pagination.paginatedSessions.filter((session) => session.isOpen);
+  const closed = pagination.paginatedSessions.filter((session) => !session.isOpen);
 
   function statusDot(s: SessionSummary) {
     if (s.needsAttention) return 'bg-gh-attention animate-pulse';
@@ -305,42 +369,128 @@ function SessionSidebar({ currentId, sessions }: { currentId: string; sessions: 
     return 'bg-gh-muted/40';
   }
 
-  const byDate = (a: SessionSummary, b: SessionSummary) =>
-    Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt);
-
-  const open   = sessions.filter((s) => s.isOpen).sort(byDate);
-  const closed = sessions.filter((s) => !s.isOpen).sort(byDate);
-
   function SessionItem({ s }: { s: SessionSummary }) {
     const isCurrent = s.id === currentId;
+    const secondaryLabel = s.gitBranch || getProjectLabel(s.projectPath);
+
     return (
       <button
         key={s.id}
         onClick={() => navigate(`/sessions/${s.id}`)}
         className={`w-full px-3 py-2.5 text-left flex items-start gap-2 transition-colors hover:bg-gh-surface/60
           ${isCurrent ? 'bg-gh-surface border-l-2 border-gh-accent' : 'border-l-2 border-transparent'}`}
-      >
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${statusDot(s)}`} />
-        <div className="min-w-0 flex-1">
-          <p className={`text-xs font-medium truncate leading-snug ${isCurrent ? 'text-gh-text' : 'text-gh-muted'}`}>
-            {s.title}
-          </p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-xs text-gh-muted/50 truncate">{s.projectPath?.split('/').pop()}</span>
-            <span className="text-gh-muted/30 shrink-0">·</span>
-            <RelativeTime timestamp={s.lastActivityAt} className="text-xs text-gh-muted/50 shrink-0" />
+        >
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${statusDot(s)}`} />
+          <div className="min-w-0 flex-1">
+            <p className={`text-xs font-medium truncate leading-snug ${isCurrent ? 'text-gh-text' : 'text-gh-muted'}`}>
+              {s.title}
+            </p>
+            <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+              <span
+                className={`text-xs truncate ${s.gitBranch ? 'font-mono text-gh-accent/80' : 'text-gh-muted/50'}`}
+                title={secondaryLabel}
+              >
+                {secondaryLabel}
+              </span>
+              <span className="text-gh-muted/30 shrink-0">·</span>
+              <RelativeTime timestamp={s.lastActivityAt} className="text-xs text-gh-muted/50 shrink-0" />
+            </div>
           </div>
-        </div>
-      </button>
-    );
+        </button>
+      );
+    }
+
+  function handleBranchChange(value: string) {
+    setBrowseState((previous) => ({
+      ...previous,
+      branch: value || null,
+      page: 1,
+    }));
+  }
+
+  function handleStatusChange(value: string) {
+    setBrowseState((previous) => ({
+      ...previous,
+      status: value ? (value as SessionBrowseStatus) : null,
+      page: 1,
+    }));
+  }
+
+  function handleSortFieldChange(value: string) {
+    setBrowseState((previous) => ({
+      ...previous,
+      sortField: value as SessionBrowseSortField,
+      page: 1,
+    }));
+  }
+
+  function handleSortOrderChange(value: 'asc' | 'desc') {
+    setBrowseState((previous) => ({
+      ...previous,
+      sortOrder: value,
+      page: 1,
+    }));
+  }
+
+  function handlePageChange(page: number) {
+    setBrowseState((previous) => ({
+      ...previous,
+      page,
+    }));
   }
 
   return (
     <div className="w-60 shrink-0 sticky top-20 self-start max-h-full flex flex-col">
       <div className="rounded-lg border border-gh-border overflow-hidden flex flex-col min-h-0 flex-1">
-        <div className="shrink-0 px-3 py-2 border-b border-gh-border bg-gh-surface flex items-center justify-between">
-          <span className="text-xs font-medium text-gh-muted uppercase tracking-wider">Sessions</span>
-          <span className="text-xs text-gh-muted/60">{sessions.length}</span>
+        <div className="shrink-0 border-b border-gh-border bg-gh-surface">
+          <div className="flex items-start justify-between gap-2 px-3 py-2">
+            <div className="min-w-0">
+              <span className="text-xs font-medium text-gh-muted uppercase tracking-wider">Sessions</span>
+              <p className="mt-1 truncate text-[11px] font-mono text-gh-muted/60" title={currentProjectPath}>
+                {getProjectLabel(currentProjectPath)}
+              </p>
+            </div>
+            <span className="text-xs text-gh-muted/60">{pagination.totalItems}</span>
+          </div>
+
+          <div className="grid gap-2 border-t border-gh-border/60 px-3 py-2">
+            <BrowseSelect
+              label="Branch"
+              value={browse.branch ?? ''}
+              onChange={handleBranchChange}
+              options={[
+                { value: '', label: 'All branches' },
+                ...browse.branchOptions.map((option) => ({
+                  value: option.value,
+                  label: `${option.label} (${option.count})`,
+                })),
+              ]}
+            />
+            <BrowseSelect
+              label="Status"
+              value={browse.status ?? ''}
+              onChange={handleStatusChange}
+              options={[
+                { value: '', label: 'All statuses' },
+                ...SESSION_BROWSE_STATUS_OPTIONS.map((status) => ({
+                  value: status,
+                  label: status,
+                })),
+              ]}
+            />
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
+              <BrowseSelect
+                label="Sort"
+                value={browseState.sortField}
+                onChange={handleSortFieldChange}
+                options={SESSION_BROWSE_SORT_FIELDS.map((field) => ({
+                  value: field,
+                  label: SESSION_BROWSE_SORT_FIELD_LABELS[field],
+                }))}
+              />
+              <BrowseSortOrderToggle value={browseState.sortOrder} onChange={handleSortOrderChange} />
+            </div>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto min-h-0">
           {/* Open sessions */}
@@ -370,10 +520,22 @@ function SessionSidebar({ currentId, sessions }: { currentId: string; sessions: 
             </div>
           )}
 
-          {sessions.length === 0 && (
-            <p className="px-3 py-6 text-xs text-gh-muted text-center">No sessions</p>
+          {pagination.totalItems === 0 && (
+            <p className="px-3 py-6 text-xs text-gh-muted text-center">No sessions match these filters.</p>
           )}
         </div>
+        {pagination.totalItems > 0 && (
+          <div className="shrink-0 border-t border-gh-border bg-gh-surface/40 px-3 py-2">
+            <BrowsePagination
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              pageSize={pagination.pageSize}
+              onPageChange={handlePageChange}
+              compact
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -473,7 +635,7 @@ export function SessionDetail() {
           )}
         </div>
       </div>
-      <SessionSidebar currentId={id ?? ''} sessions={sessions} />
+      <SessionSidebar currentId={id ?? ''} currentProjectPath={session.projectPath} sessions={sessions} />
     </div>
   );
 }

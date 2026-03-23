@@ -13,6 +13,11 @@ export interface ActiveSubAgent {
   sessionId?: string;
 }
 
+export type SessionUsageMetricSource =
+  | 'shutdown'
+  | 'assistant_turn_estimate'
+  | 'shutdown_plus_assistant_turn_estimate';
+
 export interface SessionSummary {
   id: string;
   title: string;
@@ -29,6 +34,12 @@ export interface SessionSummary {
   isIdle: boolean;
   messageCount: number;
   model?: string;
+  totalApiDurationMs: number | null;
+  totalApiDurationEstimateMs: number;
+  totalApiDurationSource: SessionUsageMetricSource;
+  totalPremiumRequests: number | null;
+  totalPremiumRequestsEstimate: number;
+  totalPremiumRequestsSource: SessionUsageMetricSource;
   currentMode: string;
   activeSubAgents: ActiveSubAgent[];
   hasPlan: boolean;

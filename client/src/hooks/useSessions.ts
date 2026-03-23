@@ -13,17 +13,37 @@ export function useSessions() {
       setCachedSessions(data);
       setSessions(data);
       setError(null);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
+      return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    const schedule = (delayMs: number) => {
+      timeoutId = window.setTimeout(async () => {
+        if (cancelled) return;
+        const ok = await load();
+        if (!cancelled) {
+          schedule(ok ? 5000 : 1000);
+        }
+      }, delayMs);
+    };
+
+    schedule(1000);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [load]);
 
   return { sessions, loading, error };
