@@ -21,6 +21,7 @@ import {
   BrowsePagination,
   BrowseSelect,
   BrowseSortOrderToggle,
+  BrowseToggle,
   SESSION_BROWSE_SORT_FIELD_LABELS,
 } from '../shared/SessionBrowseControls.tsx';
 import { SessionMeta } from './SessionMeta.tsx';
@@ -439,6 +440,14 @@ const SIDEBAR_PAGE_SIZE = 10;
     }));
   }
 
+  function handleShowUnknownChange(checked: boolean) {
+    setBrowseState((previous) => ({
+      ...previous,
+      showUnknownContext: checked,
+      page: 1,
+    }));
+  }
+
     return (
       <div className="flex h-full min-w-0 min-h-0 flex-col">
         <div className="rounded-lg border border-gh-border overflow-hidden flex flex-col min-h-0 flex-1">
@@ -628,10 +637,8 @@ export function SessionDetail() {
 
   return (
     <div className="grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(24rem,1.15fr)_minmax(34rem,1.65fr)_minmax(20rem,1fr)] 2xl:grid-cols-[minmax(26rem,1.2fr)_minmax(36rem,1.75fr)_minmax(22rem,1fr)] xl:gap-4">
-      <section className="flex min-w-0 min-h-0 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-          <SessionMeta session={session} />
-        </div>
+      <section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-surface/20 p-4">
+        <SessionMeta session={session} />
       </section>
 
       <section className="grid min-w-0 min-h-0 w-full gap-4 xl:grid-cols-[minmax(16rem,18rem)_minmax(0,1fr)]">

@@ -259,10 +259,11 @@ export function SessionMeta({ session }: Props) {
   ];
 
   return (
-    <div className="mb-5">
+    <div className="flex flex-col gap-4 min-h-0 overflow-hidden">
+      {/* Back navigation */}
       <button
         onClick={() => navigate('/')}
-        className="mb-4 flex items-center gap-1.5 text-sm text-gh-muted transition-colors hover:text-gh-accent"
+        className="flex items-center gap-1.5 text-sm text-gh-muted transition-colors hover:text-gh-accent shrink-0"
       >
         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
           <path d="M9.78 3.22a.75.75 0 010 1.06L6.06 8l3.72 3.72a.75.75 0 11-1.06 1.06L4.47 8.53a.75.75 0 010-1.06l4.25-4.25a.75.75 0 011.06 0z" />
@@ -270,100 +271,104 @@ export function SessionMeta({ session }: Props) {
         All sessions
       </button>
 
-      <section className="rounded-xl border border-gh-border bg-gh-surface/40 p-4 md:p-5">
-        <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-gh-muted">Session overview</p>
+      {/* Main Overview Panel - Vertical Stack Layout */}
+      <section className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
+        {/* Session Header Block */}
+        <div className="flex flex-col gap-3">
+          {/* Title with adjusted font size (20px = 1.25rem) */}
+          <h1 className="text-xl font-semibold leading-tight text-gh-text break-words">
+            {session.title}
+          </h1>
 
-            <div className="mt-3 flex flex-col gap-3">
-              <div className="flex flex-col gap-3">
-                <h1 className="text-2xl font-semibold leading-tight text-gh-text">
-                  {session.title}
-                </h1>
-                <div className="flex flex-wrap items-center gap-2">
-                  <SessionStatusBadges session={session} />
-                </div>
-              </div>
-
-              <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-gh-muted">
-                <span
-                  className="max-w-full truncate rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1 font-mono text-gh-text"
-                  title={session.projectPath}
-                >
-                  {getProjectLabel(session.projectPath)}
-                </span>
-                <ModeBadge mode={session.currentMode} />
-                {session.model && (
-                  <span className="max-w-full truncate rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1 font-mono text-gh-muted/80">
-                    {session.model}
-                  </span>
-                )}
-                {session.gitBranch && <CopyBranch branch={session.gitBranch} />}
-                <span className="inline-flex items-center gap-1 rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1">
-                  <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
-                    <path d="M8 0a8 8 0 110 16A8 8 0 018 0zM1.5 8a6.5 6.5 0 1013 0 6.5 6.5 0 00-13 0zm7-3.25v2.992l2.028 2.03a.75.75 0 01-1.06 1.06l-2.2-2.2a.75.75 0 01-.22-.53V4.75a.75.75 0 011.5 0z" />
-                  </svg>
-                  {formatDuration(session.durationMs)}
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-gh-accent" />
-                  Last activity <RelativeTime timestamp={session.lastActivityAt} className="text-gh-text" />
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.9fr)] xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,1fr)]">
-              <div className="min-w-0 rounded-xl border border-gh-border/70 bg-gh-bg/60 p-4">
-                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">Prompt summary</p>
-                <p className="mt-2 text-sm leading-relaxed text-gh-text">
-                  {promptSummary}
-                </p>
-              </div>
-
-              <div className="min-w-0 rounded-xl border border-gh-border/70 bg-gh-bg/60 p-4">
-                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">Attention signals</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {signals.map((signal) => (
-                    <SignalChip key={signal.label} tone={signal.tone}>
-                      {signal.label}
-                    </SignalChip>
-                  ))}
-                </div>
-              </div>
-            </div>
+          {/* Status Badges Row */}
+          <div className="flex flex-wrap items-center gap-2">
+            <SessionStatusBadges session={session} />
           </div>
 
-          <div className={`shrink-0 rounded-xl border p-4 xl:w-[20rem] 2xl:w-[22rem] ${callout.toneClass}`}>
-            <p className="text-[11px] uppercase tracking-[0.22em] opacity-80">Overview</p>
-            <p className="mt-2 text-lg font-semibold leading-tight">{callout.title}</p>
-            <p className="mt-1 text-sm leading-relaxed opacity-90">{callout.description}</p>
+          {/* Metadata Row */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-gh-muted">
+            <span
+              className="max-w-full truncate rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1 font-mono text-gh-text"
+              title={session.projectPath}
+            >
+              {getProjectLabel(session.projectPath)}
+            </span>
+            <ModeBadge mode={session.currentMode} />
+            {session.model && (
+              <span className="max-w-full truncate rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1 font-mono text-gh-muted/80">
+                {session.model}
+              </span>
+            )}
+            {session.gitBranch && <CopyBranch branch={session.gitBranch} />}
+            <span className="inline-flex items-center gap-1 rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                <path d="M8 0a8 8 0 110 16A8 8 0 018 0zM1.5 8a6.5 6.5 0 1013 0 6.5 6.5 0 00-13 0zm7-3.25v2.992l2.028 2.03a.75.75 0 01-1.06 1.06l-2.2-2.2a.75.75 0 01-.22-.53V4.75a.75.75 0 011.5 0z" />
+              </svg>
+              {formatDuration(session.durationMs)}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-gh-accent" />
+              Last activity <RelativeTime timestamp={session.lastActivityAt} className="text-gh-text" />
+            </span>
+          </div>
+        </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <OverviewMetric
-                label="Started"
-                value={formatAbsoluteTime(session.startedAt)}
-                detail={<RelativeTime timestamp={session.startedAt} className="text-current" />}
-              />
-              <OverviewMetric
-                label="Last seen"
-                value={<RelativeTime timestamp={session.lastActivityAt} className="text-current" />}
-                detail={formatAbsoluteTime(session.lastActivityAt)}
-              />
-              <OverviewMetric
-                label="Todo progress"
-                value={`${doneTodos}/${todos.length || 0}`}
-                detail={todos.length > 0 ? `${activeTodos} active · ${blockedTodos} blocked` : 'No todos yet'}
-              />
-              <OverviewMetric
-                label="Sub-agent threads"
-                value={session.activeSubAgents.length}
-                detail={
-                  session.activeSubAgents.length > 0
-                    ? `${activeAgents} running · ${completedAgents} done`
-                    : 'No agents recorded'
-                }
-              />
-            </div>
+        {/* Status Callout Card */}
+        <div className={`rounded-xl border p-4 ${callout.toneClass}`}>
+          <p className="text-[11px] uppercase tracking-[0.22em] opacity-80">Status</p>
+          <p className="mt-2 text-lg font-semibold leading-tight">{callout.title}</p>
+          <p className="mt-1 text-sm leading-relaxed opacity-90">{callout.description}</p>
+        </div>
+
+        {/* Prompt Summary Block */}
+        <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">Prompt summary</p>
+          <p className="mt-2 text-sm leading-relaxed text-gh-text">
+            {promptSummary}
+          </p>
+        </div>
+
+        {/* Attention Signals Block */}
+        <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">Attention signals</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {signals.map((signal) => (
+              <SignalChip key={signal.label} tone={signal.tone}>
+                {signal.label}
+              </SignalChip>
+            ))}
+          </div>
+        </div>
+
+        {/* Metrics Grid */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gh-muted">Started</p>
+            <p className="mt-1 text-sm font-semibold text-gh-text">{formatAbsoluteTime(session.startedAt)}</p>
+            <p className="mt-1 text-xs text-gh-muted"><RelativeTime timestamp={session.startedAt} /></p>
+          </div>
+          <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gh-muted">Last seen</p>
+            <p className="mt-1 text-sm font-semibold text-gh-text">
+              <RelativeTime timestamp={session.lastActivityAt} />
+            </p>
+            <p className="mt-1 text-xs text-gh-muted">{formatAbsoluteTime(session.lastActivityAt)}</p>
+          </div>
+          <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gh-muted">Todo progress</p>
+            <p className="mt-1 text-sm font-semibold text-gh-text">{doneTodos}/{todos.length || 0}</p>
+            <p className="mt-1 text-xs text-gh-muted">
+              {todos.length > 0 ? `${activeTodos} active · ${blockedTodos} blocked` : 'No todos yet'}
+            </p>
+          </div>
+          <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gh-muted">Sub-agent threads</p>
+            <p className="mt-1 text-sm font-semibold text-gh-text">{session.activeSubAgents.length}</p>
+            <p className="mt-1 text-xs text-gh-muted">
+              {session.activeSubAgents.length > 0
+                ? `${activeAgents} running · ${completedAgents} done`
+                : 'No agents recorded'}
+            </p>
           </div>
         </div>
       </section>
