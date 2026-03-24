@@ -33,6 +33,14 @@ interface BrowsePaginationProps {
   size?: BrowseControlSize;
 }
 
+interface BrowseToggleProps {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  compact?: boolean;
+  size?: BrowseControlSize;
+}
+
 export const SESSION_BROWSE_SORT_FIELD_LABELS: Record<SessionBrowseSortField, string> = {
   last_activity: 'Last activity',
   session_time: 'Session time',
@@ -200,6 +208,62 @@ export function BrowsePagination({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+export function BrowseToggle({
+  label,
+  checked,
+  onChange,
+  compact = false,
+  size = 'default',
+}: BrowseToggleProps) {
+  if (size === 'mobile') {
+    return (
+      <label className="flex items-center justify-between gap-3 rounded-2xl border border-gh-border bg-gh-bg px-3.5 py-3">
+        <span className="text-sm text-gh-text">{label}</span>
+        <button
+          type="button"
+          onClick={() => onChange(!checked)}
+          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+            checked ? 'bg-gh-accent' : 'bg-gh-border'
+          }`}
+          aria-checked={checked}
+          role="switch"
+        >
+          <span
+            className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
+              checked ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </label>
+    );
+  }
+
+  const labelClassName = compact
+    ? 'text-[11px] font-medium uppercase tracking-wide text-gh-muted/70'
+    : 'text-[11px] font-medium uppercase tracking-wide text-gh-muted/70';
+
+  return (
+    <div className={`flex ${compact ? 'items-center gap-2' : 'flex-col gap-1'}`}>
+      <span className={labelClassName}>{label}</span>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+          checked ? 'bg-gh-accent' : 'bg-gh-border'
+        }`}
+        aria-checked={checked}
+        role="switch"
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+            checked ? 'translate-x-5' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
   BrowsePagination,
   BrowseSelect,
   BrowseSortOrderToggle,
+  BrowseToggle,
   SESSION_BROWSE_SORT_FIELD_LABELS,
 } from '../shared/SessionBrowseControls.tsx';
 import { SessionRow } from './SessionRow.tsx';
@@ -112,6 +113,7 @@ export function SessionList() {
       projectPath: null,
       branch: null,
       status: null,
+      showUnknownContext: DEFAULT_SESSION_BROWSE_STATE.showUnknownContext,
       sortField: DEFAULT_SESSION_BROWSE_STATE.sortField,
       sortOrder: DEFAULT_SESSION_BROWSE_STATE.sortOrder,
       page: 1,
@@ -214,6 +216,17 @@ export function SessionList() {
               className="min-w-[180px] flex-1 sm:flex-none"
             />
             <BrowseSortOrderToggle value={browseState.sortOrder} onChange={handleSortOrderChange} />
+            <BrowseToggle
+              label="Show Unknown"
+              checked={browseState.showUnknownContext}
+              onChange={(checked) =>
+                setBrowseState((previous) => ({
+                  ...previous,
+                  showUnknownContext: checked,
+                  page: 1,
+                }))
+              }
+            />
           </div>
         </div>
       )}
