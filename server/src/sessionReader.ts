@@ -451,6 +451,11 @@ function readSessionArtifactEntries(directoryPath: string, sessionDir: string): 
 
       if (entry.isDirectory()) {
         artifactEntry.children = readSessionArtifactEntries(fullPath, sessionDir);
+      } else {
+        const content = readTextArtifactContent(fullPath, stat);
+        if (content !== undefined) {
+          artifactEntry.content = content;
+        }
       }
 
       return artifactEntry;
@@ -462,6 +467,19 @@ function readSessionArtifactEntries(directoryPath: string, sessionDir: string): 
 
       return left.name.localeCompare(right.name);
     });
+}
+
+function readTextArtifactContent(filePath: string, stat: fs.Stats): string | undefined {
+  if (stat.size > 2_000_000) {
+    return undefined;
+  }
+
+  try {
+    const content = fs.readFileSync(filePath);
+    return content.includes(0) ? undefined : content.toString('utf8');
+  } catch {
+    return undefined;
+  }
 }
 
 function readSessionArtifactSection(

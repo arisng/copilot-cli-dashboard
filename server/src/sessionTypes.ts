@@ -149,6 +149,7 @@ export interface SessionArtifactEntry {
   kind: 'file' | 'directory';
   sizeBytes: number;
   modifiedAt: string;
+  content?: string;
   children?: SessionArtifactEntry[];
 }
 
