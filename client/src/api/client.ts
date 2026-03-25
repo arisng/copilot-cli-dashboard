@@ -78,6 +78,59 @@ export interface TodoItem {
   dependsOn: string[];
 }
 
+export interface SessionArtifactEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory';
+  sizeBytes: number;
+  modifiedAt: string;
+  children?: SessionArtifactEntry[];
+}
+
+export interface SessionArtifactGroup {
+  path: 'plan.md' | 'checkpoints' | 'research';
+  kind: 'file' | 'directory';
+  exists: boolean;
+  status: 'ok' | 'missing' | 'unreadable';
+  message?: string;
+  sizeBytes?: number;
+  modifiedAt?: string;
+  content?: string;
+  entries?: SessionArtifactEntry[];
+}
+
+export interface SessionArtifacts {
+  sessionId: string;
+  plan: SessionArtifactGroup;
+  folders: SessionArtifactGroup[];
+}
+
+export interface SessionDbColumnInfo {
+  name: string;
+  type: string;
+  notNull: boolean;
+  defaultValue: string | null;
+  isPrimaryKey: boolean;
+  primaryKeyOrder: number;
+}
+
+export interface SessionDbTablePreview {
+  name: string;
+  type: 'table' | 'view';
+  sql: string | null;
+  columns: SessionDbColumnInfo[];
+  rowCount: number;
+  limit: number;
+  rows: Array<Record<string, unknown>>;
+}
+
+export interface SessionDbInspection {
+  sessionId: string;
+  databasePath: string;
+  availableTables: string[];
+  table: SessionDbTablePreview;
+}
+
 export interface SessionDetail extends SessionSummary {
   messages: ParsedMessage[];
   subAgentMessages: Record<string, ParsedMessage[]>;
@@ -85,17 +138,45 @@ export interface SessionDetail extends SessionSummary {
   todos?: TodoItem[];
 }
 
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    let message = `Request failed with status ${res.status}`;
+    try {
+      const body = await res.text();
+      if (body.trim()) {
+        message = body;
+      }
+    } catch {
+      // ignore body parsing errors
+    }
+    throw new Error(message);
+  }
+
+  return res.json() as Promise<T>;
+}
+
 export async function fetchSessions(): Promise<SessionSummary[]> {
-  const res = await fetch('/api/sessions');
-  if (!res.ok) throw new Error('Failed to fetch sessions');
-  const data = await res.json();
+  const data = await fetchJson<{ sessions: SessionSummary[] }>('/api/sessions');
   return data.sessions;
 }
 
 export async function fetchSession(id: string): Promise<SessionDetail> {
-  const res = await fetch(`/api/sessions/${id}`);
-  if (!res.ok) throw new Error('Session not found');
-  return res.json();
+  return fetchJson<SessionDetail>(`/api/sessions/${id}`);
+}
+
+export async function fetchSessionArtifacts(id: string): Promise<SessionArtifacts> {
+  return fetchJson<SessionArtifacts>(`/api/sessions/${id}/artifacts`);
+}
+
+export async function fetchSessionDb(id: string, table?: string, limit = 50): Promise<SessionDbInspection> {
+  const params = new URLSearchParams();
+  if (table) {
+    params.set('table', table);
+  }
+  params.set('limit', String(limit));
+
+  return fetchJson<SessionDbInspection>(`/api/sessions/${id}/session-db?${params.toString()}`);
 }
 
 export async function checkHealth(): Promise<boolean> {
