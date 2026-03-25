@@ -64,7 +64,7 @@ Result content is prefixed with `User selected: ` or `User responded: `.
 
 ## Session Detail inspector
 
-Desktop Session Detail is rail-first in column 2: the tab rail is the primary navigation, and the filter control narrows which artifact groups appear in that rail.
+Desktop Session Detail is rail-first in column 2: the tab rail is the primary navigation, and the content panel stays scrollable so long views can be read without losing the rail.
 
 The rail supports the core session views:
 
@@ -72,12 +72,15 @@ The rail supports the core session views:
 - Plan
 - Todos
 - Sub-agent threads
-- Artifact views
+- Checkpoints
+- Research
 - Session DB
 
 Sub-agent threads are grouped so large sessions do not turn the rail into an unbounded list. The grouped view keeps the rail readable while still allowing explicit selection of an individual thread when needed.
 
-Artifact views surface the current session's `plan.md`, `checkpoints/`, and `research/` folders as lightweight explorers. The Session DB surface uses the read-only `/api/sessions/:id/session-db` route and supports a toggle between table preview and the todo dependency graph presentation.
+The Plan tab is the single source of truth for `plan.md`; it is no longer duplicated inside the artifact explorer. Checkpoints and Research now have their own dedicated tabs, and each tab can open a file and show its full content rather than only metadata.
+
+The Session DB surface uses the read-only `/api/sessions/:id/session-db` route and supports a toggle between table preview and the todo dependency graph presentation.
 
 The client API exposes the supporting fetch helpers:
 
