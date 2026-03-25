@@ -62,6 +62,26 @@ Result content is prefixed with `User selected: ` or `User responded: `.
 - JetBrains Mono is self-hosted in `public/fonts/` and declared in `globals.css`.
 - The body and `font-mono` both use JetBrains Mono.
 
+## Session Detail inspector
+
+Desktop Session Detail now uses a single filterable panel in column 2 instead of a vertical tab rail.
+
+The view selector includes:
+
+- Main session
+- Plan
+- Todos
+- Sub-agent threads
+- Artifact views
+- Session DB
+
+Artifact views surface the current session's `plan.md`, `checkpoints/`, and `research/` folders as lightweight explorers. The Session DB inspector uses the read-only `/api/sessions/:id/session-db` route and shows a table picker, schema summary, and bounded row preview.
+
+The client API exposes the supporting fetch helpers:
+
+- `fetchSessionArtifacts(id)` for the artifact folder view
+- `fetchSessionDb(id, table?, limit?)` for the SQLite inspector
+
 ## Related references
 
 - [Server Architecture Reference](../server/server-architecture.md)

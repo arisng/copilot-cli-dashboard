@@ -9,6 +9,8 @@ Express 4 + TypeScript powers the API server, and the dev server runs with `tsx 
 | GET | `/api/health` | Liveness check |
 | GET | `/api/sessions` | All sessions (active + closed), sorted by last activity |
 | GET | `/api/sessions/:id` | Full session detail including messages |
+| GET | `/api/sessions/:id/artifacts` | Read-only `plan.md`, `checkpoints/`, and `research/` discovery |
+| GET | `/api/sessions/:id/session-db` | Read-only `session.db` schema metadata and row preview |
 
 ## Key files
 
@@ -24,6 +26,15 @@ Express 4 + TypeScript powers the API server, and the dev server runs with `tsx 
 - Brand-new sessions return a stub with `title: "New"` and `isIdle: true`.
 - `model` comes from the last `session.model_change` event or `shutdownData.currentModel`.
 - `needsAttention` is true when an open session has a `tool.execution_start` without a matching completion event or abort.
+
+## Session detail inspector routes
+
+Two read-only routes now back the desktop Session Detail inspector:
+
+- `/api/sessions/:id/artifacts` resolves the session directory, reads `plan.md`, and recursively lists the `checkpoints/` and `research/` folders.
+- `/api/sessions/:id/session-db` opens `session.db` read-only, enumerates tables, and returns a bounded row preview for the selected table.
+
+Both routes fail explicitly when the session directory is missing or the underlying files cannot be read. They never mutate session state.
 
 ## Status state machine
 
