@@ -261,7 +261,7 @@ function collectArtifactFiles(entries: SessionArtifactEntry[]): SessionArtifactE
   });
 }
 
-function renderArtifactContent(entry: SessionArtifactEntry) {
+function renderArtifactContent(entry: SessionArtifactEntry, forceMarkdown = false) {
   const content = entry.content?.trim();
   if (!content) {
     return (
@@ -271,7 +271,7 @@ function renderArtifactContent(entry: SessionArtifactEntry) {
     );
   }
 
-  if (/\.(md|markdown|mdown|mkdn|mkd)$/i.test(entry.name)) {
+  if (forceMarkdown || /\.(md|markdown|mdown|mkdn|mkd)$/i.test(entry.name)) {
     return <Markdown remarkPlugins={[remarkGfm]} components={planComponents}>{content}</Markdown>;
   }
 
@@ -577,6 +577,8 @@ function DetailPanelHeader({
   dbViewMode,
   selectedDbTable,
   artifacts,
+  showSessionSidebar,
+  onToggleSessionSidebar,
 }: {
   session: SessionDetailData;
   activeView: SessionDetailView;
@@ -584,6 +586,8 @@ function DetailPanelHeader({
   dbViewMode: SessionDbViewMode;
   selectedDbTable: string;
   artifacts: SessionArtifacts | null;
+  showSessionSidebar: boolean;
+  onToggleSessionSidebar: () => void;
 }) {
   const todos = session.todos ?? [];
   const activeTodos = todos.filter((todo) => todo.status === 'in_progress').length;
@@ -677,6 +681,18 @@ function DetailPanelHeader({
             {badgeTextByView[activeView]}
           </span>
         )}
+        <button
+          type="button"
+          onClick={onToggleSessionSidebar}
+          aria-pressed={showSessionSidebar}
+          className="inline-flex items-center gap-1.5 rounded-full border border-gh-border bg-gh-bg/70 px-3 py-1 text-xs font-medium text-gh-muted transition-colors hover:border-gh-border hover:text-gh-text focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface"
+          title={showSessionSidebar ? 'Hide session browser column' : 'Show session browser column'}
+        >
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+            <path d="M1.75 2A1.75 1.75 0 000 3.75v8.5C0 13.216.784 14 1.75 14h12.5A1.75 1.75 0 0016 12.25v-8.5A1.75 1.75 0 0014.25 2zM1.5 3.75a.25.25 0 01.25-.25H4v9H1.75a.25.25 0 01-.25-.25zm4 8.75v-9h4.5v9zm6 0v-9h2.25a.25.25 0 01.25.25v8.5a.25.25 0 01-.25.25z" />
+          </svg>
+          <span>{showSessionSidebar ? 'Hide sessions' : 'Show sessions'}</span>
+        </button>
       </div>
     </div>
   );
@@ -839,7 +855,7 @@ function ArtifactGroupPanel({ group }: { group: SessionArtifactGroup }) {
                   <p className="mt-1 text-[11px] font-mono text-gh-muted">{selectedFile.path}</p>
                 </div>
                 <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4">
-                  {renderArtifactContent(selectedFile)}
+                  {renderArtifactContent(selectedFile, group.path === 'checkpoints')}
                 </div>
               </div>
             ) : (
@@ -1767,6 +1783,7 @@ export function SessionDetail() {
   const [selectedThreadId, setSelectedThreadId] = useState('');
   const [selectedDbTable, setSelectedDbTable] = useState('');
   const [dbViewMode, setDbViewMode] = useState<SessionDbViewMode>('graph');
+  const [showSessionSidebar, setShowSessionSidebar] = useState(false);
   const subAgents = useMemo(() => [...(session?.activeSubAgents ?? [])].reverse(), [session?.activeSubAgents]);
   const hasPlan = Boolean(session?.hasPlan || session?.planContent);
   const hasTodos = (session?.todos?.length ?? 0) > 0;
@@ -1792,6 +1809,7 @@ export function SessionDetail() {
     setSelectedThreadId('');
     setSelectedDbTable('');
     setDbViewMode('graph');
+    setShowSessionSidebar(false);
   }, [id]);
 
   useEffect(() => {
@@ -1894,6 +1912,9 @@ export function SessionDetail() {
     };
   });
   const detailPanelClassName = `flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`;
+  const detailGridClassName = showSessionSidebar
+    ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(22rem,1.05fr)_minmax(0,1.7fr)_minmax(18rem,0.85fr)] 2xl:grid-cols-[minmax(24rem,1.1fr)_minmax(0,1.9fr)_minmax(20rem,0.95fr)] xl:gap-4'
+    : 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(24rem,1.15fr)_minmax(0,1.85fr)] 2xl:grid-cols-[minmax(26rem,1.2fr)_minmax(0,2.05fr)] xl:gap-4';
 
   function handleViewChange(view: SessionDetailView) {
     setActiveView(view);
@@ -1910,7 +1931,7 @@ export function SessionDetail() {
   }
 
   return (
-    <div className="grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(24rem,1.15fr)_minmax(34rem,1.65fr)_minmax(20rem,1fr)] 2xl:grid-cols-[minmax(26rem,1.2fr)_minmax(36rem,1.75fr)_minmax(22rem,1fr)] xl:gap-4">
+    <div className={detailGridClassName}>
       <section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-surface/20 p-4">
         <SessionMeta session={session} />
       </section>
@@ -1923,6 +1944,8 @@ export function SessionDetail() {
           dbViewMode={dbViewMode}
           selectedDbTable={selectedDbTable}
           artifacts={artifacts}
+          showSessionSidebar={showSessionSidebar}
+          onToggleSessionSidebar={() => setShowSessionSidebar((previous) => !previous)}
         />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 xl:flex-row" role="region" aria-labelledby="session-detail-panel-heading">
@@ -1935,7 +1958,7 @@ export function SessionDetail() {
             id={getSessionDetailPanelId(resolvedView)}
             role="tabpanel"
             aria-labelledby={getSessionDetailTabId(resolvedView)}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-bg/20"
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-xl border border-gh-border bg-gh-bg/20"
           >
             {resolvedView === 'main' && (
               <MessageList messages={session.messages} />
@@ -2114,7 +2137,9 @@ export function SessionDetail() {
         </div>
       </section>
 
-      <SessionSidebar currentId={id ?? ''} currentProjectPath={session.projectPath} sessions={sessions} />
+      <div className={showSessionSidebar ? 'block' : 'block xl:hidden'}>
+        <SessionSidebar currentId={id ?? ''} currentProjectPath={session.projectPath} sessions={sessions} />
+      </div>
     </div>
   );
 }
