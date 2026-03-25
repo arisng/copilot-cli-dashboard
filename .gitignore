@@ -4,3 +4,4 @@ dist/
 *.local
 .npmrc
 .playwright-cli/
+.fleet-sessions/
