@@ -24,6 +24,7 @@ import {
   SESSION_BROWSE_SORT_FIELD_LABELS,
 } from '../shared/SessionBrowseControls.tsx';
 import { SessionMeta } from './SessionMeta.tsx';
+import { SessionTabNav, getSessionDetailPanelId, getSessionDetailTabId, type SessionDetailTab } from './SessionTabNav.tsx';
 import { modeBorderClass } from '../shared/modeBadge.tsx';
 import { MessageBubble } from './MessageBubble.tsx';
 import { RelativeTime } from '../shared/RelativeTime.tsx';
@@ -127,6 +128,7 @@ const planComponents: Components = {
 };
 
 type SessionDetailView = 'main' | 'plan' | 'todos' | 'threads' | 'artifacts' | 'session-db';
+type SessionDbViewMode = 'graph' | 'table';
 
 const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = [
   { value: 'main', label: 'Main session' },
@@ -137,7 +139,23 @@ const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = 
   { value: 'session-db', label: 'Session DB' },
 ];
 
+const DETAIL_VIEW_DESCRIPTIONS: Partial<Record<SessionDetailView, string>> = {
+  main: 'Primary conversation stream for the session.',
+  plan: 'Captured plan content and execution guardrails.',
+  todos: 'Work items with dependency and status tracking.',
+  threads: 'Sub-agent conversations with grouped selection.',
+  artifacts: 'Plan, checkpoint, and research artifacts.',
+  'session-db': 'Todo dependency graph with a table preview fallback.',
+};
+
+const ARTIFACT_GROUP_OPTIONS: Array<{ value: SessionArtifactGroup['path']; label: string }> = [
+  { value: 'plan.md', label: 'Plan' },
+  { value: 'checkpoints', label: 'Checkpoints' },
+  { value: 'research', label: 'Research' },
+];
+
 const DEFAULT_DB_PREVIEW_LIMIT = 50;
+const DEFAULT_DB_GRAPH_LIMIT = 500;
 const ARTIFACT_GROUP_ORDER: Array<SessionArtifactGroup['path']> = ['plan.md', 'checkpoints', 'research'];
 
 function truncateText(value: string, maxLength: number) {
@@ -210,6 +228,56 @@ function rowMatchesFilter(row: Record<string, unknown>, filterValue: string): bo
   return Object.entries(row).some(([columnName, columnValue]) =>
     columnName.toLowerCase().includes(trimmed) || formatPreviewValue(columnValue).toLowerCase().includes(trimmed)
   );
+}
+
+function getRowString(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== null && value !== undefined) {
+      const text = String(value).trim();
+      if (text) {
+        return text;
+      }
+    }
+  }
+
+  return '';
+}
+
+function buildTodoItemsFromDb(
+  todoInspection: SessionDbInspection | null,
+  todoDepsInspection: SessionDbInspection | null,
+  fallbackTodos: TodoItem[] = [],
+): TodoItem[] {
+  if (!todoInspection?.table.rows.length) {
+    return fallbackTodos;
+  }
+
+  const dependencyByTodoId = new Map<string, string[]>();
+  (todoDepsInspection?.table.rows ?? []).forEach((row) => {
+    const todoId = getRowString(row, ['todo_id', 'todoId']);
+    const dependsOn = getRowString(row, ['depends_on', 'dependsOn']);
+    if (!todoId || !dependsOn) {
+      return;
+    }
+
+    const existing = dependencyByTodoId.get(todoId) ?? [];
+    existing.push(dependsOn);
+    dependencyByTodoId.set(todoId, existing);
+  });
+
+  return todoInspection.table.rows.map((row) => {
+    const id = getRowString(row, ['id']);
+    return {
+      id,
+      title: getRowString(row, ['title']) || id,
+      description: getRowString(row, ['description']),
+      status: getRowString(row, ['status']) || 'pending',
+      createdAt: getRowString(row, ['created_at', 'createdAt']),
+      updatedAt: getRowString(row, ['updated_at', 'updatedAt']),
+      dependsOn: id ? dependencyByTodoId.get(id) ?? [] : [],
+    };
+  }).filter((todo) => Boolean(todo.id));
 }
 
 function getArtifactGroupLabel(group: SessionArtifactGroup) {
@@ -467,40 +535,21 @@ function MessageList({ messages }: { messages: ParsedMessage[] }) {
 function DetailPanelHeader({
   session,
   activeView,
-  onViewChange,
-  selectedThreadId,
-  onThreadChange,
-  subAgents,
+  activeThread,
+  dbViewMode,
+  selectedDbTable,
 }: {
   session: SessionDetailData;
   activeView: SessionDetailView;
-  onViewChange: (view: SessionDetailView) => void;
-  selectedThreadId: string;
-  onThreadChange: (threadId: string) => void;
-  subAgents: ActiveSubAgent[];
+  activeThread: ActiveSubAgent | null;
+  dbViewMode: SessionDbViewMode;
+  selectedDbTable: string;
 }) {
   const todos = session.todos ?? [];
-  const hasPlan = session.hasPlan || Boolean(session.planContent);
   const activeTodos = todos.filter((todo) => todo.status === 'in_progress').length;
   const blockedTodos = todos.filter((todo) => todo.status === 'blocked').length;
   const completedTodos = todos.filter((todo) => isDone(todo.status)).length;
-  const activeThread = subAgents.find((agent) => agent.toolCallId === selectedThreadId) ?? subAgents[0] ?? null;
-  const viewOptions = DETAIL_VIEW_OPTIONS.filter((option) => {
-    if (option.value === 'plan') {
-      return hasPlan;
-    }
-
-    if (option.value === 'todos') {
-      return todos.length > 0;
-    }
-
-    if (option.value === 'threads') {
-      return subAgents.length > 0;
-    }
-
-    return true;
-  });
-  const selectedView = viewOptions.some((option) => option.value === activeView) ? activeView : 'main';
+  const hasPlan = session.hasPlan || Boolean(session.planContent);
 
   const titleByView: Record<SessionDetailView, string> = {
     main: 'Main session',
@@ -508,7 +557,7 @@ function DetailPanelHeader({
     todos: 'Todos',
     threads: 'Sub-agent threads',
     artifacts: 'Artifact views',
-    'session-db': 'Session DB',
+    'session-db': dbViewMode === 'graph' ? 'Todo dependency graph' : 'Session DB table preview',
   };
 
   const descriptionByView: Partial<Record<SessionDetailView, string>> = {
@@ -521,9 +570,11 @@ function DetailPanelHeader({
       : 'No todos are recorded for this session yet.',
     threads: activeThread
       ? activeThread.description || activeThread.agentDisplayName || activeThread.agentName
-      : 'Sub-agent conversations grouped in a single panel.',
+      : 'Sub-agent conversations grouped for quicker scanning.',
     artifacts: 'Plan, checkpoint, and research artifacts from the current session.',
-    'session-db': 'Read-only schema and row preview for the session database.',
+    'session-db': dbViewMode === 'graph'
+      ? 'Read-only todo dependency graph with a table preview fallback.'
+      : 'Read-only schema and row preview for the session database.',
   };
 
   const badgeTextByView: Partial<Record<SessionDetailView, string>> = {
@@ -532,7 +583,11 @@ function DetailPanelHeader({
     todos: todos.length > 0 ? `${completedTodos}/${todos.length} done` : undefined,
     threads: activeThread ? (activeThread.isCompleted ? 'Done' : 'Running') : undefined,
     artifacts: hasPlan ? 'Artifacts ready' : 'No plan content',
-    'session-db': 'Read only',
+    'session-db': dbViewMode === 'graph'
+      ? 'Graph'
+      : selectedDbTable
+        ? 'Table preview'
+        : 'Read only',
   };
 
   const badgeClassByView: Partial<Record<SessionDetailView, string>> = {
@@ -552,47 +607,25 @@ function DetailPanelHeader({
 
   return (
     <div className="shrink-0 border-b border-gh-border bg-gh-surface/40 px-4 py-3">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <p id="session-detail-panel-heading" className="text-sm font-semibold text-gh-text">{titleByView[selectedView]}</p>
-            <p className="mt-1 text-xs leading-5 text-gh-muted">{descriptionByView[selectedView]}</p>
-            <p className="mt-2 text-xs text-gh-muted/80">
-              {selectedView === 'threads' && activeThread ? activeThread.agentDisplayName || activeThread.agentName : session.title}
-            </p>
-          </div>
-          {badgeTextByView[selectedView] && (
-            <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${badgeClassByView[selectedView]}`}>
-              {badgeTextByView[selectedView]}
-            </span>
-          )}
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p id="session-detail-panel-heading" className="text-sm font-semibold text-gh-text">
+            {titleByView[activeView]}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-gh-muted">{descriptionByView[activeView]}</p>
+          <p className="mt-2 text-xs text-gh-muted/80">
+            {activeView === 'threads' && activeThread
+              ? `${activeThread.agentDisplayName || activeThread.agentName}${activeThread.description ? ` · ${activeThread.description}` : ''}`
+              : activeView === 'session-db' && dbViewMode === 'table'
+                ? selectedDbTable || 'Table preview'
+                : session.title}
+          </p>
         </div>
-
-        <div className="grid gap-2 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
-          <BrowseSelect
-            label="View"
-            value={selectedView}
-            onChange={(value) => onViewChange(value as SessionDetailView)}
-            options={viewOptions.map((option) => ({
-              value: option.value,
-              label: option.label,
-            }))}
-          />
-
-          {selectedView === 'threads' && subAgents.length > 0 ? (
-            <BrowseSelect
-              label="Thread"
-              value={selectedThreadId || subAgents[0]?.toolCallId || ''}
-              onChange={onThreadChange}
-              options={subAgents.map((agent) => ({
-                value: agent.toolCallId,
-                label: agent.agentDisplayName || agent.agentName,
-              }))}
-            />
-          ) : (
-            <div className="hidden lg:block" aria-hidden="true" />
-          )}
-        </div>
+        {badgeTextByView[activeView] && (
+          <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${badgeClassByView[activeView]}`}>
+            {badgeTextByView[activeView]}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -676,19 +709,574 @@ function ArtifactGroupCard({ group }: { group: SessionArtifactGroup }) {
 }
 
 function SessionArtifactsPanel({ artifacts }: { artifacts: SessionArtifacts }) {
+  const [visibleGroups, setVisibleGroups] = useState<Set<SessionArtifactGroup['path']>>(
+    () => new Set(ARTIFACT_GROUP_ORDER),
+  );
   const orderedGroups = [artifacts.plan, ...artifacts.folders].filter(
     (group): group is SessionArtifactGroup => ARTIFACT_GROUP_ORDER.includes(group.path),
   );
   const groups = ARTIFACT_GROUP_ORDER
     .map((path) => orderedGroups.find((group) => group.path === path))
     .filter((group): group is SessionArtifactGroup => Boolean(group));
+  const visibleArtifactGroups = groups.filter((group) => visibleGroups.has(group.path));
+
+  function toggleGroup(groupPath: SessionArtifactGroup['path']) {
+    setVisibleGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupPath)) {
+        next.delete(groupPath);
+      } else {
+        next.add(groupPath);
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-4">
-      <div className="grid gap-3">
-        {groups.map((group) => (
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gh-border bg-gh-surface/30 p-3">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-gh-muted/70">Artifact categories</span>
+        {ARTIFACT_GROUP_OPTIONS.map((option) => {
+          const isActive = visibleGroups.has(option.value);
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => toggleGroup(option.value)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface ${
+                isActive
+                  ? 'border-gh-accent/40 bg-gh-accent/10 text-gh-text'
+                  : 'border-gh-border bg-gh-bg/70 text-gh-muted hover:border-gh-border hover:text-gh-text'
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setVisibleGroups(new Set(ARTIFACT_GROUP_ORDER))}
+          className="rounded-full border border-gh-border bg-gh-bg/70 px-3 py-1 text-xs font-medium text-gh-muted transition-colors hover:border-gh-border hover:text-gh-text focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface"
+        >
+          Show all
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-3">
+        {visibleArtifactGroups.map((group) => (
           <ArtifactGroupCard key={group.path} group={group} />
         ))}
+        {visibleArtifactGroups.length === 0 && (
+          <div className="rounded-xl border border-dashed border-gh-border bg-gh-surface/20 p-4 text-sm text-gh-muted">
+            No artifact categories are currently selected.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface TodoGraphNode {
+  todo: TodoItem;
+  depth: number;
+  dependencyCount: number;
+  dependentCount: number;
+  missingDependencyIds: string[];
+  blockedByDependencies: boolean;
+  isReady: boolean;
+}
+
+interface TodoGraphEdge {
+  from: TodoItem;
+  to: TodoItem;
+}
+
+function buildTodoGraph(todos: TodoItem[]) {
+  const todoById = new Map(todos.map((todo) => [todo.id, todo] as const));
+  const dependentCountById = new Map<string, number>();
+
+  todos.forEach((todo) => {
+    todo.dependsOn.forEach((dependencyId) => {
+      dependentCountById.set(dependencyId, (dependentCountById.get(dependencyId) ?? 0) + 1);
+    });
+  });
+
+  const depthMemo = new Map<string, number>();
+  const visiting = new Set<string>();
+
+  function getDepth(todo: TodoItem): number {
+    const memoized = depthMemo.get(todo.id);
+    if (memoized !== undefined) {
+      return memoized;
+    }
+
+    if (visiting.has(todo.id)) {
+      return 0;
+    }
+
+    visiting.add(todo.id);
+    const dependencyDepths = todo.dependsOn
+      .map((dependencyId) => todoById.get(dependencyId))
+      .filter((dependency): dependency is TodoItem => Boolean(dependency))
+      .map((dependency) => getDepth(dependency) + 1);
+    visiting.delete(todo.id);
+
+    const depth = dependencyDepths.length > 0 ? Math.max(...dependencyDepths) : 0;
+    depthMemo.set(todo.id, depth);
+    return depth;
+  }
+
+  const nodes: TodoGraphNode[] = todos.map((todo) => {
+    const resolvedDependencies = todo.dependsOn
+      .map((dependencyId) => todoById.get(dependencyId))
+      .filter((dependency): dependency is TodoItem => Boolean(dependency));
+    const missingDependencyIds = todo.dependsOn.filter((dependencyId) => !todoById.has(dependencyId));
+    const blockedByDependencies = resolvedDependencies.some((dependency) => !isDone(dependency.status));
+
+    return {
+      todo,
+      depth: getDepth(todo),
+      dependencyCount: todo.dependsOn.length,
+      dependentCount: dependentCountById.get(todo.id) ?? 0,
+      missingDependencyIds,
+      blockedByDependencies,
+      isReady: todo.status === 'in_progress' && !blockedByDependencies,
+    };
+  });
+
+  const layers = Array.from(new Map(nodes.map((node) => [node.depth, [] as TodoGraphNode[]]))).sort(
+    (left, right) => left[0] - right[0],
+  );
+  nodes.forEach((node) => {
+    const layer = layers.find(([depth]) => depth === node.depth);
+    layer?.[1].push(node);
+  });
+
+  const edges: TodoGraphEdge[] = [];
+  todos.forEach((todo) => {
+    todo.dependsOn.forEach((dependencyId) => {
+      const dependency = todoById.get(dependencyId);
+      if (dependency) {
+        edges.push({ from: todo, to: dependency });
+      }
+    });
+  });
+
+  return {
+    nodes,
+    layers: layers.map(([, layerNodes]) => layerNodes),
+    edges,
+  };
+}
+
+function TodoGraphNodeCard({ node }: { node: TodoGraphNode }) {
+  const { todo } = node;
+  const status = STATUS_CONFIG[todo.status] ?? { label: todo.status, dot: 'bg-gh-muted', text: 'text-gh-muted' };
+
+  return (
+    <article className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate text-sm font-semibold text-gh-text">{todo.title}</h4>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-gh-muted">{todo.description}</p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium ${status.text} border-gh-border bg-gh-bg/70`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+            {status.label}
+          </span>
+          {node.blockedByDependencies && !isDone(todo.status) && (
+            <span className="rounded-full border border-gh-attention/30 bg-gh-attention/10 px-2 py-1 text-[11px] font-medium text-gh-attention">
+              Blocked by deps
+            </span>
+          )}
+          {node.isReady && (
+            <span className="rounded-full border border-gh-active/30 bg-gh-active/10 px-2 py-1 text-[11px] font-medium text-gh-active">
+              Ready
+            </span>
+          )}
+        </div>
+      </div>
+
+      <dl className="mt-3 grid gap-2 text-[11px] text-gh-muted sm:grid-cols-2">
+        <div className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-2 py-1.5">
+          <dt className="uppercase tracking-wide text-gh-muted/70">Created</dt>
+          <dd className="mt-0.5">
+            <RelativeTime timestamp={todo.createdAt} />
+          </dd>
+        </div>
+        <div className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-2 py-1.5">
+          <dt className="uppercase tracking-wide text-gh-muted/70">Updated</dt>
+          <dd className="mt-0.5">
+            <RelativeTime timestamp={todo.updatedAt} />
+          </dd>
+        </div>
+        <div className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-2 py-1.5">
+          <dt className="uppercase tracking-wide text-gh-muted/70">Dependencies</dt>
+          <dd className="mt-0.5">
+            {node.dependencyCount} direct · {node.missingDependencyIds.length} missing
+          </dd>
+        </div>
+        <div className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-2 py-1.5">
+          <dt className="uppercase tracking-wide text-gh-muted/70">Dependents</dt>
+          <dd className="mt-0.5">{node.dependentCount} downstream</dd>
+        </div>
+      </dl>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="text-gh-muted/70">Depends on</span>
+        {todo.dependsOn.length > 0 ? (
+          todo.dependsOn.map((dependencyId) => (
+            <span key={dependencyId} className="rounded-full border border-gh-border bg-gh-bg/80 px-2 py-0.5 font-mono text-gh-muted">
+              {dependencyId}
+            </span>
+          ))
+        ) : (
+          <span className="rounded-full border border-gh-border bg-gh-bg/80 px-2 py-0.5 text-gh-muted">None</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function SessionDbDependencyGraph({
+  todoInspection,
+  todoDepsInspection,
+  fallbackTodos,
+  onOpenTablePreview,
+  tableCount,
+  loading,
+  error,
+}: {
+  todoInspection: SessionDbInspection | null;
+  todoDepsInspection: SessionDbInspection | null;
+  fallbackTodos: TodoItem[];
+  onOpenTablePreview: () => void;
+  tableCount: number;
+  loading: boolean;
+  error: string | null;
+}) {
+  const graphTodos = useMemo(
+    () => buildTodoItemsFromDb(todoInspection, todoDepsInspection, fallbackTodos),
+    [fallbackTodos, todoDepsInspection, todoInspection],
+  );
+  const graph = useMemo(() => buildTodoGraph(graphTodos), [graphTodos]);
+  const completedCount = graphTodos.filter((todo) => isDone(todo.status)).length;
+  const activeCount = graphTodos.filter((todo) => todo.status === 'in_progress').length;
+  const blockedCount = graph.nodes.filter((node) => node.todo.status === 'blocked' || (node.blockedByDependencies && !isDone(node.todo.status))).length;
+  const isPreviewLimited = Boolean(
+    (todoInspection && todoInspection.table.rowCount > todoInspection.table.rows.length) ||
+      (todoDepsInspection && todoDepsInspection.table.rowCount > todoDepsInspection.table.rows.length),
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gh-border bg-gh-surface/30 p-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gh-text">Todo dependency graph</p>
+          <p className="mt-1 text-xs leading-5 text-gh-muted">
+            {loading && graphTodos.length === 0
+              ? 'Loading todo and dependency tables…'
+              : graphTodos.length > 0
+                ? `${graphTodos.length} todo${graphTodos.length === 1 ? '' : 's'} · ${activeCount} active · ${blockedCount} blocked · ${completedCount} done`
+                : 'No todo graph data was captured for this session.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenTablePreview}
+          className="rounded-full border border-gh-border bg-gh-bg/70 px-3 py-1.5 text-xs font-medium text-gh-muted transition-colors hover:border-gh-border hover:text-gh-text focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface"
+        >
+          Open table preview
+        </button>
+      </div>
+
+      {error && graphTodos.length === 0 ? (
+        <div className="mt-4 rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+          {error}
+        </div>
+      ) : graphTodos.length > 0 ? (
+        <>
+          {error && (
+            <div className="mt-4 rounded-xl border border-gh-warning/30 bg-gh-warning/10 p-3 text-xs text-gh-warning">
+              {error}
+            </div>
+          )}
+          <div className="mt-4 space-y-4">
+            {graph.layers.map((layer, index) => (
+              <section key={`layer-${index}`} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-gh-border bg-gh-bg px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-gh-muted">
+                    Layer {index + 1}
+                  </span>
+                  <span className="text-[11px] text-gh-muted">{layer.length} item{layer.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {layer.map((node) => (
+                    <TodoGraphNodeCard key={node.todo.id} node={node} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+
+          <section className="mt-4 rounded-xl border border-gh-border bg-gh-surface/30 p-4">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gh-text">Relationship edges</h3>
+              <span className="rounded-full border border-gh-border bg-gh-bg px-2 py-1 text-[11px] text-gh-muted">
+                {graph.edges.length} edges
+              </span>
+            </div>
+            {graph.edges.length > 0 ? (
+              <ul className="mt-3 space-y-2">
+                {graph.edges.map((edge) => (
+                  <li key={`${edge.from.id}->${edge.to.id}`} className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-3 py-2 text-xs text-gh-text">
+                    <span className="font-medium">{edge.from.title}</span>
+                    <span className="mx-2 text-gh-muted">→</span>
+                    <span className="text-gh-muted">{edge.to.title}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-xs text-gh-muted">No dependency edges were recorded.</p>
+            )}
+          </section>
+        </>
+      ) : (
+        <div className="mt-4 rounded-xl border border-dashed border-gh-border bg-gh-surface/20 p-4 text-sm text-gh-muted">
+          Open the table preview to inspect the raw session.db tables and rows.
+        </div>
+      )}
+
+      <div className="mt-4 space-y-2 text-xs text-gh-muted">
+        {isPreviewLimited && (
+          <p>
+            The graph is built from preview rows; open the table preview if you need the raw session.db slices.
+          </p>
+        )}
+        {tableCount > 0 && (
+          <p>The table-oriented preview remains available if you need to inspect raw schema and rows.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SessionDbModeToggle({
+  value,
+  onChange,
+}: {
+  value: SessionDbViewMode;
+  onChange: (value: SessionDbViewMode) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-full border border-gh-border bg-gh-surface/50 p-1">
+      {([
+        { value: 'graph', label: 'Dependency graph' },
+        { value: 'table', label: 'Table preview' },
+      ] as const).map((option) => {
+        const isActive = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => onChange(option.value)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface ${
+              isActive
+                ? 'bg-gh-accent/15 text-gh-text'
+                : 'text-gh-muted hover:text-gh-text'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ThreadListItem({
+  agent,
+  isSelected,
+  onSelect,
+}: {
+  agent: ActiveSubAgent;
+  isSelected: boolean;
+  onSelect: (threadId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(agent.toolCallId)}
+      aria-pressed={isSelected}
+      className={`w-full rounded-lg border px-3 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface ${
+        isSelected
+          ? 'border-gh-accent/40 bg-gh-accent/10 text-gh-text'
+          : 'border-gh-border bg-gh-bg/70 text-gh-muted hover:border-gh-border hover:text-gh-text'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">
+            {agent.agentDisplayName || agent.agentName}
+          </p>
+          {agent.description && (
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-gh-muted/90">
+              {agent.description}
+            </p>
+          )}
+        </div>
+        <span
+          className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+            agent.isCompleted ? 'bg-gh-muted' : 'bg-gh-active animate-pulse'
+          }`}
+          aria-hidden="true"
+        />
+      </div>
+    </button>
+  );
+}
+
+function ThreadExplorer({
+  session,
+  subAgents,
+  selectedThreadId,
+  onThreadChange,
+}: {
+  session: SessionDetailData;
+  subAgents: ActiveSubAgent[];
+  selectedThreadId: string;
+  onThreadChange: (threadId: string) => void;
+}) {
+  const [threadSearch, setThreadSearch] = useState('');
+  const filteredThreads = useMemo(() => {
+    const normalized = threadSearch.trim().toLowerCase();
+    if (!normalized) {
+      return subAgents;
+    }
+
+    return subAgents.filter((agent) => {
+      const searchable = [
+        agent.agentDisplayName,
+        agent.agentName,
+        agent.description,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return searchable.includes(normalized);
+    });
+  }, [subAgents, threadSearch]);
+  const hasMatchingThreads = filteredThreads.length > 0;
+  const runningThreads = filteredThreads.filter((agent) => !agent.isCompleted);
+  const completedThreads = filteredThreads.filter((agent) => agent.isCompleted);
+  const selectedThread = hasMatchingThreads
+    ? subAgents.find((agent) => agent.toolCallId === selectedThreadId) ?? filteredThreads[0] ?? subAgents[0] ?? null
+    : null;
+  const selectedMessages = selectedThread ? session.subAgentMessages?.[selectedThread.toolCallId] ?? [] : [];
+
+  useEffect(() => {
+    if (filteredThreads.length === 0) {
+      return;
+    }
+
+    if (!filteredThreads.some((agent) => agent.toolCallId === selectedThreadId)) {
+      onThreadChange(filteredThreads[0].toolCallId);
+    }
+  }, [filteredThreads, onThreadChange, selectedThreadId]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(16rem,18rem)_minmax(0,1fr)]">
+        <section className="flex min-h-0 flex-col rounded-xl border border-gh-border bg-gh-surface/30 p-3">
+          <label className="flex min-w-0 flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-gh-muted/70">Search threads</span>
+            <input
+              type="search"
+              value={threadSearch}
+              onChange={(event) => setThreadSearch(event.target.value)}
+              placeholder="Filter by thread name or summary"
+              className="h-9 min-w-0 rounded-md border border-gh-border bg-gh-bg px-2 text-xs text-gh-text transition-colors focus:border-gh-accent focus:outline-none"
+            />
+          </label>
+
+          <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gh-muted">Running</h3>
+                <span className="text-[11px] text-gh-muted">{runningThreads.length}</span>
+              </div>
+              <div className="space-y-2">
+                {runningThreads.map((agent) => (
+                  <ThreadListItem
+                    key={agent.toolCallId}
+                    agent={agent}
+                    isSelected={agent.toolCallId === selectedThread?.toolCallId}
+                    onSelect={onThreadChange}
+                  />
+                ))}
+                {runningThreads.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-gh-border bg-gh-bg/60 px-3 py-3 text-xs text-gh-muted">
+                    No running threads match the current search.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gh-muted">Done</h3>
+                <span className="text-[11px] text-gh-muted">{completedThreads.length}</span>
+              </div>
+              <div className="space-y-2">
+                {completedThreads.map((agent) => (
+                  <ThreadListItem
+                    key={agent.toolCallId}
+                    agent={agent}
+                    isSelected={agent.toolCallId === selectedThread?.toolCallId}
+                    onSelect={onThreadChange}
+                  />
+                ))}
+                {completedThreads.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-gh-border bg-gh-bg/60 px-3 py-3 text-xs text-gh-muted">
+                    No completed threads match the current search.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-bg/30">
+          <div className="shrink-0 border-b border-gh-border bg-gh-surface/40 px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-gh-text">
+                  {selectedThread ? selectedThread.agentDisplayName || selectedThread.agentName : 'No thread selected'}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-gh-muted">
+                  {selectedThread?.description || 'Choose a thread from the list to inspect its messages.'}
+                </p>
+              </div>
+              {selectedThread && (
+                <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${
+                  selectedThread.isCompleted
+                    ? 'border-gh-border bg-gh-bg/70 text-gh-muted'
+                    : 'border-gh-active/30 bg-gh-active/10 text-gh-active'
+                }`}>
+                  {selectedThread.isCompleted ? 'Done' : 'Running'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {hasMatchingThreads ? (
+            <MessageList messages={selectedMessages} />
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-6 text-sm text-gh-muted">
+              No threads match the current search.
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -812,9 +1400,9 @@ function SessionDbInspector({
             </pre>
           ) : null}
 
-              {filteredRows.length > 0 ? (
-                <div className="mt-3 overflow-x-auto rounded-lg border border-gh-border">
-                <table className="min-w-full text-left text-xs">
+          {filteredRows.length > 0 ? (
+            <div className="mt-3 overflow-x-auto rounded-lg border border-gh-border">
+              <table className="min-w-full text-left text-xs">
                 <thead className="bg-gh-surface/70 text-gh-muted">
                   <tr>
                     {rowColumns.map((column) => (
@@ -1101,6 +1689,7 @@ export function SessionDetail() {
   const [activeView, setActiveView] = useState<SessionDetailView>('main');
   const [selectedThreadId, setSelectedThreadId] = useState('');
   const [selectedDbTable, setSelectedDbTable] = useState('');
+  const [dbViewMode, setDbViewMode] = useState<SessionDbViewMode>('graph');
   const subAgents = useMemo(() => [...(session?.activeSubAgents ?? [])].reverse(), [session?.activeSubAgents]);
   const hasPlan = Boolean(session?.hasPlan || session?.planContent);
   const hasTodos = (session?.todos?.length ?? 0) > 0;
@@ -1110,11 +1699,22 @@ export function SessionDetail() {
     loading: sessionDbLoading,
     error: sessionDbError,
   } = useSessionDbInspection(session?.id ?? '', selectedDbTable, DEFAULT_DB_PREVIEW_LIMIT);
+  const {
+    inspection: todoDbInspection,
+    loading: todoDbLoading,
+    error: todoDbError,
+  } = useSessionDbInspection(session?.id ?? '', 'todos', DEFAULT_DB_GRAPH_LIMIT);
+  const {
+    inspection: todoDepsDbInspection,
+    loading: todoDepsDbLoading,
+    error: todoDepsDbError,
+  } = useSessionDbInspection(session?.id ?? '', 'todo_deps', DEFAULT_DB_GRAPH_LIMIT);
 
   useLayoutEffect(() => {
     setActiveView('main');
     setSelectedThreadId('');
     setSelectedDbTable('');
+    setDbViewMode('graph');
   }, [id]);
 
   useEffect(() => {
@@ -1131,8 +1731,9 @@ export function SessionDetail() {
       return;
     }
 
+    const preferredThread = subAgents.find((agent) => !agent.isCompleted)?.toolCallId ?? subAgents[0].toolCallId;
     if (!subAgents.some((agent) => agent.toolCallId === selectedThreadId)) {
-      setSelectedThreadId(subAgents[0].toolCallId);
+      setSelectedThreadId(preferredThread);
     }
   }, [selectedThreadId, subAgents]);
 
@@ -1169,10 +1770,39 @@ export function SessionDetail() {
     return true;
   });
   const resolvedView = availableViews.some((option) => option.value === activeView) ? activeView : 'main';
-  const selectedThread = subAgents.find((agent) => agent.toolCallId === selectedThreadId) ?? subAgents[0] ?? null;
-  const activeMessages = resolvedView === 'threads'
-    ? (session.subAgentMessages?.[selectedThread?.toolCallId ?? ''] ?? [])
-    : session.messages;
+  const selectedThread = subAgents.find((agent) => agent.toolCallId === selectedThreadId) ?? subAgents.find((agent) => !agent.isCompleted) ?? subAgents[0] ?? null;
+  const activeThreadCount = subAgents.filter((agent) => !agent.isCompleted).length;
+  const completedThreadCount = subAgents.filter((agent) => agent.isCompleted).length;
+  const activeTodos = (session.todos ?? []).filter((todo) => todo.status === 'in_progress').length;
+  const blockedTodos = (session.todos ?? []).filter((todo) => todo.status === 'blocked').length;
+  const completedTodos = (session.todos ?? []).filter((todo) => isDone(todo.status)).length;
+  const detailTabs: SessionDetailTab[] = availableViews.map((option) => {
+    const descriptionByValue: Record<SessionDetailView, string> = {
+      main: `${session.messageCount} messages in the primary conversation.`,
+      plan: session.isPlanPending
+        ? 'Plan approval is pending before execution continues.'
+        : 'Captured plan content available for reference.',
+      todos: hasTodos
+        ? `${activeTodos} active · ${blockedTodos} blocked · ${completedTodos}/${session.todos?.length ?? 0} done`
+        : 'No todos are recorded for this session yet.',
+      threads: `${activeThreadCount} running · ${completedThreadCount} done`,
+      artifacts: 'Plan, checkpoint, and research artifacts.',
+      'session-db': 'Todo dependency graph with table preview fallback.',
+    };
+
+    return {
+      id: option.value,
+      label: option.label,
+      description: descriptionByValue[option.value],
+      isCompleted: option.value === 'threads' ? completedThreadCount > 0 && activeThreadCount === 0 : undefined,
+      isSubAgent: option.value === 'threads',
+      isPlan: option.value === 'plan',
+      isPlanPending: option.value === 'plan' && session.isPlanPending,
+      isTodos: option.value === 'todos',
+      isMain: option.value === 'main',
+      accentColor: option.value === 'threads' ? 'sky' : 'blue',
+    };
+  });
   const detailPanelClassName = `flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`;
 
   function handleViewChange(view: SessionDetailView) {
@@ -1182,6 +1812,11 @@ export function SessionDetail() {
   function handleThreadChange(threadId: string) {
     setSelectedThreadId(threadId);
     setActiveView('threads');
+  }
+
+  function handleDbViewModeChange(mode: SessionDbViewMode) {
+    setDbViewMode(mode);
+    setActiveView('session-db');
   }
 
   return (
@@ -1194,113 +1829,156 @@ export function SessionDetail() {
         <DetailPanelHeader
           session={session}
           activeView={resolvedView}
-          onViewChange={handleViewChange}
-          selectedThreadId={selectedThread?.toolCallId ?? selectedThreadId}
-          onThreadChange={handleThreadChange}
-          subAgents={subAgents}
+          activeThread={selectedThread}
+          dbViewMode={dbViewMode}
+          selectedDbTable={selectedDbTable}
         />
 
-        <div className="flex min-h-0 flex-1 flex-col" role="region" aria-labelledby="session-detail-panel-heading">
-          {resolvedView === 'main' && (
-            <MessageList messages={activeMessages} />
-          )}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 xl:flex-row" role="region" aria-labelledby="session-detail-panel-heading">
+          <aside className="min-h-0 overflow-y-auto rounded-xl border border-gh-border bg-gh-surface/20 p-3 xl:w-[18rem] xl:flex-shrink-0">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">Views</div>
+            <SessionTabNav tabs={detailTabs} activeId={resolvedView} onChange={(id) => handleViewChange(id as SessionDetailView)} />
+          </aside>
 
-          {resolvedView === 'plan' && (
-            session.planContent ? (
-              <PlanView content={session.planContent} isPending={session.isPlanPending} />
-            ) : (
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                  No plan content was captured for this session.
-                </div>
-              </div>
-            )
-          )}
+          <div
+            id={getSessionDetailPanelId(resolvedView)}
+            role="tabpanel"
+            aria-labelledby={getSessionDetailTabId(resolvedView)}
+            className="min-h-0 flex-1 overflow-hidden rounded-xl border border-gh-border bg-gh-bg/20"
+          >
+            {resolvedView === 'main' && (
+              <MessageList messages={session.messages} />
+            )}
 
-          {resolvedView === 'todos' && (
-            session.todos?.length ? (
-              <TodosView todos={session.todos} />
-            ) : (
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                  No todos are recorded for this session.
-                </div>
-              </div>
-            )
-          )}
-
-          {resolvedView === 'threads' && (
-            subAgents.length > 0 ? (
-              <MessageList messages={activeMessages} />
-            ) : (
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                  No sub-agent threads were captured for this session.
-                </div>
-              </div>
-            )
-          )}
-
-          {resolvedView === 'artifacts' && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              {artifactsLoading && !artifacts && (
+            {resolvedView === 'plan' && (
+              session.planContent ? (
+                <PlanView content={session.planContent} isPending={session.isPlanPending} />
+              ) : (
                 <div className="flex-1 overflow-y-auto p-4">
                   <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                    Loading artifact files…
+                    No plan content was captured for this session.
                   </div>
                 </div>
-              )}
-              {artifactsError && (
-                <div className="flex-1 overflow-y-auto p-4">
-                  <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
-                    {artifactsError}
-                  </div>
-                </div>
-              )}
-              {artifacts && <SessionArtifactsPanel artifacts={artifacts} />}
-              {!artifactsLoading && !artifactsError && !artifacts && (
-                <div className="flex-1 overflow-y-auto p-4">
-                  <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                    No artifact data was returned for this session.
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+              )
+            )}
 
-          {resolvedView === 'session-db' && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              {sessionDbLoading && !sessionDbInspection && (
+            {resolvedView === 'todos' && (
+              session.todos?.length ? (
+                <TodosView todos={session.todos} />
+              ) : (
                 <div className="flex-1 overflow-y-auto p-4">
                   <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                    Loading session database…
+                    No todos are recorded for this session.
                   </div>
                 </div>
-              )}
-              {sessionDbError && (
-                <div className="flex-1 overflow-y-auto p-4">
-                  <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
-                    {sessionDbError}
-                  </div>
-                </div>
-              )}
-              {sessionDbInspection && sessionDbInspection.availableTables.length > 0 && (
-                <SessionDbInspector
-                  inspection={sessionDbInspection}
-                  selectedTable={selectedDbTable}
-                  onTableChange={setSelectedDbTable}
-                  limit={DEFAULT_DB_PREVIEW_LIMIT}
+              )
+            )}
+
+            {resolvedView === 'threads' && (
+              subAgents.length > 0 ? (
+                <ThreadExplorer
+                  session={session}
+                  subAgents={subAgents}
+                  selectedThreadId={selectedThread?.toolCallId ?? selectedThreadId}
+                  onThreadChange={handleThreadChange}
                 />
-              )}
-              {!sessionDbLoading && !sessionDbError && sessionDbInspection && sessionDbInspection.availableTables.length === 0 && (
+              ) : (
                 <div className="flex-1 overflow-y-auto p-4">
                   <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                    No tables were found in the session database.
+                    No sub-agent threads were captured for this session.
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+              )
+            )}
+
+            {resolvedView === 'artifacts' && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {artifactsLoading && !artifacts && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      Loading artifact files…
+                    </div>
+                  </div>
+                )}
+                {artifactsError && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+                      {artifactsError}
+                    </div>
+                  </div>
+                )}
+                {artifacts && <SessionArtifactsPanel artifacts={artifacts} />}
+                {!artifactsLoading && !artifactsError && !artifacts && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      No artifact data was returned for this session.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {resolvedView === 'session-db' && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="shrink-0 border-b border-gh-border bg-gh-surface/30 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gh-text">
+                        {dbViewMode === 'graph' ? 'Todo dependency graph' : 'Table preview'}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-gh-muted">
+                        {dbViewMode === 'graph'
+                          ? 'Read-only graph of todos and todo dependencies.'
+                          : 'Read-only schema summary and bounded row preview.'}
+                      </p>
+                    </div>
+                    <SessionDbModeToggle value={dbViewMode} onChange={handleDbViewModeChange} />
+                  </div>
+                </div>
+
+                {sessionDbLoading && !sessionDbInspection && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      Loading session database…
+                    </div>
+                  </div>
+                )}
+                {sessionDbError && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+                      {sessionDbError}
+                    </div>
+                  </div>
+                )}
+                {dbViewMode === 'graph' && (
+                  <SessionDbDependencyGraph
+                    todoInspection={todoDbInspection}
+                    todoDepsInspection={todoDepsDbInspection}
+                    fallbackTodos={[]}
+                    onOpenTablePreview={() => handleDbViewModeChange('table')}
+                    tableCount={sessionDbInspection?.availableTables.length ?? 0}
+                    loading={todoDbLoading || todoDepsDbLoading}
+                    error={todoDbError || todoDepsDbError}
+                  />
+                )}
+                {dbViewMode === 'table' && sessionDbInspection && sessionDbInspection.availableTables.length > 0 && (
+                  <SessionDbInspector
+                    inspection={sessionDbInspection}
+                    selectedTable={selectedDbTable}
+                    onTableChange={setSelectedDbTable}
+                    limit={DEFAULT_DB_PREVIEW_LIMIT}
+                  />
+                )}
+                {dbViewMode === 'table' && !sessionDbLoading && !sessionDbError && sessionDbInspection && sessionDbInspection.availableTables.length === 0 && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      No tables were found in the session database.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
