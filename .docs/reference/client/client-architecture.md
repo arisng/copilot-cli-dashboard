@@ -64,9 +64,9 @@ Result content is prefixed with `User selected: ` or `User responded: `.
 
 ## Session Detail inspector
 
-Desktop Session Detail now uses a single filterable panel in column 2 instead of a vertical tab rail.
+Desktop Session Detail is rail-first in column 2: the tab rail is the primary navigation, and the filter control narrows which artifact groups appear in that rail.
 
-The view selector includes:
+The rail supports the core session views:
 
 - Main session
 - Plan
@@ -75,7 +75,9 @@ The view selector includes:
 - Artifact views
 - Session DB
 
-Artifact views surface the current session's `plan.md`, `checkpoints/`, and `research/` folders as lightweight explorers. The Session DB inspector uses the read-only `/api/sessions/:id/session-db` route and shows a table picker, schema summary, and bounded row preview.
+Sub-agent threads are grouped so large sessions do not turn the rail into an unbounded list. The grouped view keeps the rail readable while still allowing explicit selection of an individual thread when needed.
+
+Artifact views surface the current session's `plan.md`, `checkpoints/`, and `research/` folders as lightweight explorers. The Session DB surface uses the read-only `/api/sessions/:id/session-db` route and supports a toggle between table preview and the todo dependency graph presentation.
 
 The client API exposes the supporting fetch helpers:
 
@@ -86,4 +88,3 @@ The client API exposes the supporting fetch helpers:
 
 - [Server Architecture Reference](../server/server-architecture.md)
 - [Session Data Model Reference](../session-state/session-data-model.md)
-

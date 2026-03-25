@@ -32,7 +32,7 @@ Express 4 + TypeScript powers the API server, and the dev server runs with `tsx 
 Two read-only routes now back the desktop Session Detail inspector:
 
 - `/api/sessions/:id/artifacts` resolves the session directory, reads `plan.md`, and recursively lists the `checkpoints/` and `research/` folders.
-- `/api/sessions/:id/session-db` opens `session.db` read-only, enumerates tables, and returns a bounded row preview for the selected table.
+- `/api/sessions/:id/session-db` opens `session.db` read-only, enumerates tables, and returns the metadata and bounded row preview used by the client-side table/graph toggle.
 
 Both routes fail explicitly when the session directory is missing or the underlying files cannot be read. They never mutate session state.
 

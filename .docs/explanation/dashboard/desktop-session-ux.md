@@ -17,10 +17,11 @@ That made it harder to monitor multiple sessions quickly on large screens and on
 ## What changed in Session Detail
 
 - The left column still focuses on the session overview panel with status, project and branch context, prompt summary, attention signals, and timing, todo, and sub-agent metrics.
-- Column 2 no longer uses a vertical tab rail. It now uses a compact filter panel so the user can switch between main session content, plan, todos, sub-agent threads, artifact views, and session DB inspection from one place.
+- Column 2 now treats the tab rail as the primary navigation surface. A filter control sits with the rail so the user can narrow the available artifact groups instead of scanning one long list.
 - Artifact views expose the current session's `plan.md`, `checkpoints/`, and `research/` data as lightweight explorers instead of requiring filesystem access.
-- The Session DB inspector uses the new read-only server route to show schema metadata, a table picker, and a bounded row preview.
-- The selected view still keeps the content panel labelled and keyboard accessible, but the interaction model is now flatter and easier to scan on wide desktops.
+- Sub-agent threads are grouped before they are presented in the rail, which keeps large sessions readable while still making individual threads directly selectable.
+- The Session DB inspector uses the new read-only server route to switch between a table preview and a todo dependency graph, keeping the same data source but changing the presentation to match the task.
+- The selected rail item still keeps the content panel labelled and keyboard accessible, but the interaction model now matches the feedback-driven mental model rather than a single flat inspector.
 
 ## QA summary
 
@@ -39,7 +40,7 @@ That made it harder to monitor multiple sessions quickly on large screens and on
 The latest desktop follow-up keeps the session detail route inside the browser viewport and splits the available width into three independently useful regions:
 
 - **Column 1** combines the session overview and summary metrics so title, status, prompt summary, attention state, and timing stay immediately visible. On narrower desktop widths the callout stacks below the content to keep the column responsive.
-- **Column 2** now holds a single filterable inspector panel for the main thread, plan, todos, sub-agent threads, artifact views, and session DB. It keeps the selected content in one place and avoids the old vertical tab rail.
+- **Column 2** now uses a rail-first inspector with artifact filters, grouped sub-agent handling, and a session DB mode switch between table and dependency graph views. The rail remains the primary way to move between the main thread, plan, todos, sub-agent threads, artifact views, and session DB.
 - **Column 3** shows the project-scoped session browser with the same project, branch, status, and sort controls used elsewhere in the app.
 - The shared session browse model now includes a `Working` status so desktop and mobile filters describe active sessions consistently.
 
