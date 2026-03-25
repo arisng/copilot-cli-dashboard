@@ -17,6 +17,12 @@ import type {
   ActiveSubAgent,
   TodoItem,
   SessionUsageMetricSource,
+  SessionArtifactEntry,
+  SessionArtifactGroup,
+  SessionArtifacts,
+  SessionDbColumnInfo,
+  SessionDbInspection,
+  SessionDbTablePreview,
 } from './sessionTypes.js';
 import { needsAttention, lastSessionStatus, hasPendingWork, hasPendingPlanApproval, getCurrentMode } from './utils/needsAttention.js';
 
@@ -57,8 +63,32 @@ type SessionUsageMetrics = {
   totalPremiumRequestsSource: SessionUsageMetricSource;
 };
 
+type SessionArtifactSectionName = 'checkpoints' | 'research';
+type SqliteDatabase = ReturnType<typeof Database>;
+
 let sessionRootsCache: SessionRootsCache | null = null;
 const sessionSummaryCache = new Map<string, CachedSessionSummary>();
+const SESSION_ARTIFACT_SECTIONS: SessionArtifactSectionName[] = ['checkpoints', 'research'];
+const SESSION_DB_PREVIEW_LIMIT = 100;
+
+export class SessionDbInspectionError extends Error {
+  code: 'missing_db' | 'missing_table' | 'unreadable' | 'invalid_limit' | 'invalid_request';
+  details?: string;
+  availableTables?: string[];
+
+  constructor(
+    code: 'missing_db' | 'missing_table' | 'unreadable' | 'invalid_limit' | 'invalid_request',
+    message: string,
+    details?: string,
+    availableTables?: string[],
+  ) {
+    super(message);
+    this.name = 'SessionDbInspectionError';
+    this.code = code;
+    this.details = details;
+    this.availableTables = availableTables;
+  }
+}
 
 function normalizeRoot(root: string): string {
   return root.trim().replace(/[\\/]+$/, '');
@@ -393,6 +423,261 @@ function readTodos(sessionDir: string): TodoItem[] | undefined {
     }));
   } catch {
     return undefined;
+  }
+}
+
+function formatTimestampFromStat(stat: fs.Stats): string {
+  return new Date(stat.mtimeMs).toISOString();
+}
+
+function toSessionArtifactPath(sessionDir: string, itemPath: string): string {
+  const relativePath = path.relative(sessionDir, itemPath);
+  return relativePath.split(path.sep).join('/');
+}
+
+function readSessionArtifactEntries(directoryPath: string, sessionDir: string): SessionArtifactEntry[] {
+  const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
+  return entries
+    .map((entry) => {
+      const fullPath = path.join(directoryPath, entry.name);
+      const stat = fs.statSync(fullPath);
+      const artifactEntry: SessionArtifactEntry = {
+        name: entry.name,
+        path: toSessionArtifactPath(sessionDir, fullPath),
+        kind: entry.isDirectory() ? 'directory' : 'file',
+        sizeBytes: stat.size,
+        modifiedAt: formatTimestampFromStat(stat),
+      };
+
+      if (entry.isDirectory()) {
+        artifactEntry.children = readSessionArtifactEntries(fullPath, sessionDir);
+      }
+
+      return artifactEntry;
+    })
+    .sort((left, right) => {
+      if (left.kind !== right.kind) {
+        return left.kind === 'directory' ? -1 : 1;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function readSessionArtifactSection(
+  sessionDir: string,
+  section: SessionArtifactSectionName,
+): SessionArtifactGroup {
+  const sectionPath = path.join(sessionDir, section);
+
+  if (!fs.existsSync(sectionPath)) {
+    return {
+      path: section,
+      kind: 'directory',
+      exists: false,
+      status: 'missing',
+      message: `The ${section}/ folder does not exist in this session directory.`,
+    };
+  }
+
+  try {
+    const stat = fs.statSync(sectionPath);
+    if (!stat.isDirectory()) {
+      return {
+        path: section,
+        kind: 'directory',
+        exists: true,
+        status: 'unreadable',
+        message: `The ${section} path exists, but it is not a directory.`,
+      };
+    }
+
+    return {
+      path: section,
+      kind: 'directory',
+      exists: true,
+      status: 'ok',
+      entries: readSessionArtifactEntries(sectionPath, sessionDir),
+    };
+  } catch {
+    return {
+      path: section,
+      kind: 'directory',
+      exists: true,
+      status: 'unreadable',
+      message: `The ${section}/ folder exists, but the server could not read its contents.`,
+    };
+  }
+}
+
+function readPlanArtifact(sessionDir: string): SessionArtifactGroup {
+  const planPath = path.join(sessionDir, 'plan.md');
+
+  if (!fs.existsSync(planPath)) {
+    return {
+      path: 'plan.md',
+      kind: 'file',
+      exists: false,
+      status: 'missing',
+      message: 'No plan.md file exists for this session.',
+    };
+  }
+
+  try {
+    const stat = fs.statSync(planPath);
+    return {
+      path: 'plan.md',
+      kind: 'file',
+      exists: true,
+      status: 'ok',
+      sizeBytes: stat.size,
+      modifiedAt: formatTimestampFromStat(stat),
+      content: fs.readFileSync(planPath, 'utf8'),
+    };
+  } catch {
+    return {
+      path: 'plan.md',
+      kind: 'file',
+      exists: true,
+      status: 'unreadable',
+      message: 'plan.md exists, but the server could not read it.',
+    };
+  }
+}
+
+function readSessionArtifactsAtPath(sessionDir: string, sessionId: string): SessionArtifacts {
+  return {
+    sessionId,
+    plan: readPlanArtifact(sessionDir),
+    folders: SESSION_ARTIFACT_SECTIONS.map((section) => readSessionArtifactSection(sessionDir, section)),
+  };
+}
+
+export function readSessionArtifacts(sessionId: string): SessionArtifacts | null {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) return null;
+  return readSessionArtifactsAtPath(sessionDir, sessionId);
+}
+
+function quoteSqlIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function getAvailableSessionDbTables(db: SqliteDatabase): Array<{ name: string; type: 'table' | 'view'; sql: string | null }> {
+  return db
+    .prepare(
+      "SELECT name, type, sql FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+    )
+    .all() as Array<{ name: string; type: 'table' | 'view'; sql: string | null }>;
+}
+
+function getSessionDbColumns(db: SqliteDatabase, tableName: string): SessionDbColumnInfo[] {
+  const rows = db.prepare(`PRAGMA table_info(${quoteSqlIdentifier(tableName)})`).all() as Array<{
+    name: string;
+    type: string;
+    notnull: number;
+    dflt_value: string | null;
+    pk: number;
+  }>;
+
+  return rows.map((column) => ({
+    name: column.name,
+    type: column.type,
+    notNull: column.notnull === 1,
+    defaultValue: column.dflt_value ?? null,
+    isPrimaryKey: column.pk > 0,
+    primaryKeyOrder: column.pk,
+  }));
+}
+
+export function inspectSessionDb(sessionId: string, tableName = '', limit = 25): SessionDbInspection | null {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) return null;
+
+  const dbPath = path.join(sessionDir, 'session.db');
+  if (!fs.existsSync(dbPath)) {
+    throw new SessionDbInspectionError(
+      'missing_db',
+      'session.db not found for this session.',
+      'This session directory does not contain a session.db file yet.',
+    );
+  }
+
+  const normalizedTableName = tableName.trim();
+
+  const normalizedLimit = Number.isFinite(limit) ? Math.trunc(limit) : 25;
+  const boundedLimit = Math.min(Math.max(normalizedLimit, 1), SESSION_DB_PREVIEW_LIMIT);
+
+  let db: SqliteDatabase | undefined;
+
+  try {
+    db = new Database(dbPath, { readonly: true });
+    const availableTables = getAvailableSessionDbTables(db);
+    if (availableTables.length === 0) {
+      return {
+        sessionId,
+        databasePath: dbPath,
+        availableTables: [],
+        table: {
+          name: '',
+          type: 'table',
+          sql: null,
+          columns: [],
+          rowCount: 0,
+          limit: boundedLimit,
+          rows: [],
+        },
+      };
+    }
+
+    const tableMeta = normalizedTableName
+      ? availableTables.find((table) => table.name === normalizedTableName)
+      : availableTables[0];
+
+    if (!tableMeta) {
+      throw new SessionDbInspectionError(
+        'missing_table',
+        `Table "${normalizedTableName}" was not found in session.db.`,
+        'Choose one of the tables listed in availableTables.',
+        availableTables.map((table) => table.name),
+      );
+    }
+
+    const selectedTableName = tableMeta.name;
+    const columns = getSessionDbColumns(db, selectedTableName);
+    const quotedTable = quoteSqlIdentifier(selectedTableName);
+    const rowCountRow = db.prepare(`SELECT COUNT(*) AS count FROM ${quotedTable}`).get() as { count: number | bigint | null } | undefined;
+    const rowCount = Number(rowCountRow?.count ?? 0);
+    const rows = db.prepare(`SELECT * FROM ${quotedTable} LIMIT ?`).all(boundedLimit) as Array<Record<string, unknown>>;
+
+    const table: SessionDbTablePreview = {
+      name: selectedTableName,
+      type: tableMeta.type,
+      sql: tableMeta.sql,
+      columns,
+      rowCount,
+      limit: boundedLimit,
+      rows,
+    };
+
+    return {
+      sessionId,
+      databasePath: toSessionArtifactPath(sessionDir, dbPath),
+      availableTables: availableTables.map((tableRow) => tableRow.name),
+      table,
+    };
+  } catch (error) {
+    if (error instanceof SessionDbInspectionError) {
+      throw error;
+    }
+
+    throw new SessionDbInspectionError(
+      'unreadable',
+      'Unable to inspect session.db.',
+      error instanceof Error ? error.message : String(error),
+    );
+  } finally {
+    db?.close();
   }
 }
 

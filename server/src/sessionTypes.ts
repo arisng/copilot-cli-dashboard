@@ -143,6 +143,59 @@ export interface TodoItem {
   dependsOn: string[]; // IDs of todos this depends on
 }
 
+export interface SessionArtifactEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory';
+  sizeBytes: number;
+  modifiedAt: string;
+  children?: SessionArtifactEntry[];
+}
+
+export interface SessionArtifactGroup {
+  path: 'plan.md' | 'checkpoints' | 'research';
+  kind: 'file' | 'directory';
+  exists: boolean;
+  status: 'ok' | 'missing' | 'unreadable';
+  message?: string;
+  sizeBytes?: number;
+  modifiedAt?: string;
+  content?: string;
+  entries?: SessionArtifactEntry[];
+}
+
+export interface SessionArtifacts {
+  sessionId: string;
+  plan: SessionArtifactGroup;
+  folders: SessionArtifactGroup[];
+}
+
+export interface SessionDbColumnInfo {
+  name: string;
+  type: string;
+  notNull: boolean;
+  defaultValue: string | null;
+  isPrimaryKey: boolean;
+  primaryKeyOrder: number;
+}
+
+export interface SessionDbTablePreview {
+  name: string;
+  type: 'table' | 'view';
+  sql: string | null;
+  columns: SessionDbColumnInfo[];
+  rowCount: number;
+  limit: number;
+  rows: Array<Record<string, unknown>>;
+}
+
+export interface SessionDbInspection {
+  sessionId: string;
+  databasePath: string;
+  availableTables: string[];
+  table: SessionDbTablePreview;
+}
+
 export interface SessionDetail extends SessionSummary {
   messages: ParsedMessage[];
   // keyed by task toolCallId — messages that belong to each sub-agent thread
