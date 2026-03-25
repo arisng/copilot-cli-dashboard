@@ -10,6 +10,8 @@ export interface SessionDetailTab {
   description?: string;
   isCompleted?: boolean;
   isSubAgent: boolean;
+  isArtifact?: boolean;
+  artifactKind?: 'checkpoints' | 'research';
   isPlan?: boolean;
   isPlanPending?: boolean;
   isTodos?: boolean;
@@ -47,6 +49,20 @@ function TabIcon({ tab }: { tab: SessionDetailTab }) {
       <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gh-attention/12 text-gh-attention">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
           <path d="M0 1.75A.75.75 0 01.75 1h4.253c1.227 0 2.317.59 3 1.501A3.744 3.744 0 0111.006 1h4.245a.75.75 0 01.75.75v10.5a.75.75 0 01-.75.75h-4.507a2.25 2.25 0 00-1.591.659l-.622.621a.75.75 0 01-1.06 0l-.622-.621A2.25 2.25 0 005.258 13H.75a.75.75 0 01-.75-.75zm7.251 10.324l.022-.067v-8.51c-.09-.198-.2-.37-.33-.517A2.25 2.25 0 005.003 2.5H1.5v9.013h3.757a3.75 3.75 0 012-.689zm1.499-8.577v8.51l.022.068a3.75 3.75 0 012-.711H14.5V2.5h-3.244a2.25 2.25 0 00-1.852.979c-.13.148-.24.32-.154.518z" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (tab.isArtifact) {
+    return (
+      <span
+        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+          tab.artifactKind === 'research' ? 'bg-sky-400/15 text-sky-400' : 'bg-gh-accent/15 text-gh-accent'
+        }`}
+      >
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
+          <path d="M1.75 2A1.75 1.75 0 000 3.75v8.5C0 13.216.784 14 1.75 14h12.5A1.75 1.75 0 0016 12.25v-6.5A1.75 1.75 0 0014.25 4H8.5l-1.25-1.5A1.75 1.75 0 005.89 2H1.75zm0 1.5h4.14a.25.25 0 01.192.09l1.25 1.5a.75.75 0 00.576.27h6.342a.25.25 0 01.25.25v6.5a.25.25 0 01-.25.25H1.75a.25.25 0 01-.25-.25v-8.5a.25.25 0 01.25-.25z" />
         </svg>
       </span>
     );

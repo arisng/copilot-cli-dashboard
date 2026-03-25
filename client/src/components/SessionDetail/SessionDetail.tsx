@@ -127,7 +127,7 @@ const planComponents: Components = {
   hr: () => <hr className="border-gh-border my-4" />,
 };
 
-type SessionDetailView = 'main' | 'plan' | 'todos' | 'threads' | 'artifacts' | 'session-db';
+type SessionDetailView = 'main' | 'plan' | 'todos' | 'threads' | 'checkpoints' | 'research' | 'session-db';
 type SessionDbViewMode = 'graph' | 'table';
 
 const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = [
@@ -135,7 +135,8 @@ const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = 
   { value: 'plan', label: 'Plan' },
   { value: 'todos', label: 'Todos' },
   { value: 'threads', label: 'Sub-agent threads' },
-  { value: 'artifacts', label: 'Artifact views' },
+  { value: 'checkpoints', label: 'Checkpoints' },
+  { value: 'research', label: 'Research' },
   { value: 'session-db', label: 'Session DB' },
 ];
 
@@ -144,19 +145,13 @@ const DETAIL_VIEW_DESCRIPTIONS: Partial<Record<SessionDetailView, string>> = {
   plan: 'Captured plan content and execution guardrails.',
   todos: 'Work items with dependency and status tracking.',
   threads: 'Sub-agent conversations with grouped selection.',
-  artifacts: 'Plan, checkpoint, and research artifacts.',
+  checkpoints: 'Captured checkpoint files and snapshots.',
+  research: 'Research notes, references, and supporting files.',
   'session-db': 'Todo dependency graph with a table preview fallback.',
 };
 
-const ARTIFACT_GROUP_OPTIONS: Array<{ value: SessionArtifactGroup['path']; label: string }> = [
-  { value: 'plan.md', label: 'Plan' },
-  { value: 'checkpoints', label: 'Checkpoints' },
-  { value: 'research', label: 'Research' },
-];
-
 const DEFAULT_DB_PREVIEW_LIMIT = 50;
 const DEFAULT_DB_GRAPH_LIMIT = 500;
-const ARTIFACT_GROUP_ORDER: Array<SessionArtifactGroup['path']> = ['plan.md', 'checkpoints', 'research'];
 
 function truncateText(value: string, maxLength: number) {
   const normalized = value.trim().replace(/\s+/g, ' ');
@@ -242,6 +237,49 @@ function getRowString(row: Record<string, unknown>, keys: string[]): string {
   }
 
   return '';
+}
+
+function getArtifactGroupByPath(artifacts: SessionArtifacts | null, path: SessionArtifactGroup['path']): SessionArtifactGroup | null {
+  if (!artifacts) {
+    return null;
+  }
+
+  if (path === 'plan.md') {
+    return artifacts.plan;
+  }
+
+  return artifacts.folders.find((group) => group.path === path) ?? null;
+}
+
+function collectArtifactFiles(entries: SessionArtifactEntry[]): SessionArtifactEntry[] {
+  return entries.flatMap((entry) => {
+    if (entry.kind === 'file') {
+      return [entry];
+    }
+
+    return collectArtifactFiles(entry.children ?? []);
+  });
+}
+
+function renderArtifactContent(entry: SessionArtifactEntry) {
+  const content = entry.content?.trim();
+  if (!content) {
+    return (
+      <p className="rounded-xl border border-dashed border-gh-border bg-gh-surface/20 p-4 text-sm text-gh-muted">
+        No text content is available for this file.
+      </p>
+    );
+  }
+
+  if (/\.(md|markdown|mdown|mkdn|mkd)$/i.test(entry.name)) {
+    return <Markdown remarkPlugins={[remarkGfm]} components={planComponents}>{content}</Markdown>;
+  }
+
+  return (
+    <pre className="whitespace-pre-wrap break-words rounded-xl border border-gh-border bg-gh-bg/70 p-4 text-xs leading-relaxed text-gh-text">
+      {content}
+    </pre>
+  );
 }
 
 function buildTodoItemsFromDb(
@@ -538,25 +576,31 @@ function DetailPanelHeader({
   activeThread,
   dbViewMode,
   selectedDbTable,
+  artifacts,
 }: {
   session: SessionDetailData;
   activeView: SessionDetailView;
   activeThread: ActiveSubAgent | null;
   dbViewMode: SessionDbViewMode;
   selectedDbTable: string;
+  artifacts: SessionArtifacts | null;
 }) {
   const todos = session.todos ?? [];
   const activeTodos = todos.filter((todo) => todo.status === 'in_progress').length;
   const blockedTodos = todos.filter((todo) => todo.status === 'blocked').length;
   const completedTodos = todos.filter((todo) => isDone(todo.status)).length;
-  const hasPlan = session.hasPlan || Boolean(session.planContent);
+  const checkpointGroup = getArtifactGroupByPath(artifacts, 'checkpoints');
+  const researchGroup = getArtifactGroupByPath(artifacts, 'research');
+  const checkpointFileCount = checkpointGroup ? collectArtifactFiles(checkpointGroup.entries ?? []).length : 0;
+  const researchFileCount = researchGroup ? collectArtifactFiles(researchGroup.entries ?? []).length : 0;
 
   const titleByView: Record<SessionDetailView, string> = {
     main: 'Main session',
     plan: 'Plan',
     todos: 'Todos',
     threads: 'Sub-agent threads',
-    artifacts: 'Artifact views',
+    checkpoints: 'Checkpoints',
+    research: 'Research',
     'session-db': dbViewMode === 'graph' ? 'Todo dependency graph' : 'Session DB table preview',
   };
 
@@ -571,7 +615,12 @@ function DetailPanelHeader({
     threads: activeThread
       ? activeThread.description || activeThread.agentDisplayName || activeThread.agentName
       : 'Sub-agent conversations grouped for quicker scanning.',
-    artifacts: 'Plan, checkpoint, and research artifacts from the current session.',
+    checkpoints: checkpointGroup?.status === 'ok'
+      ? `${checkpointFileCount} checkpoint file${checkpointFileCount === 1 ? '' : 's'} available.`
+      : 'Checkpoint artifacts from the current session.',
+    research: researchGroup?.status === 'ok'
+      ? `${researchFileCount} research file${researchFileCount === 1 ? '' : 's'} available.`
+      : 'Research artifacts from the current session.',
     'session-db': dbViewMode === 'graph'
       ? 'Read-only todo dependency graph with a table preview fallback.'
       : 'Read-only schema and row preview for the session database.',
@@ -582,7 +631,8 @@ function DetailPanelHeader({
     plan: session.isPlanPending ? 'Needs review' : 'Captured',
     todos: todos.length > 0 ? `${completedTodos}/${todos.length} done` : undefined,
     threads: activeThread ? (activeThread.isCompleted ? 'Done' : 'Running') : undefined,
-    artifacts: hasPlan ? 'Artifacts ready' : 'No plan content',
+    checkpoints: checkpointGroup?.status === 'ok' ? `${checkpointFileCount} files` : 'Artifacts',
+    research: researchGroup?.status === 'ok' ? `${researchFileCount} files` : 'Artifacts',
     'session-db': dbViewMode === 'graph'
       ? 'Graph'
       : selectedDbTable
@@ -601,7 +651,8 @@ function DetailPanelHeader({
     threads: activeThread?.isCompleted
       ? 'border-gh-border bg-gh-bg/70 text-gh-muted'
       : 'border-gh-active/30 bg-gh-active/10 text-gh-active',
-    artifacts: 'border-gh-border bg-gh-bg/70 text-gh-muted',
+    checkpoints: 'border-gh-border bg-gh-bg/70 text-gh-muted',
+    research: 'border-gh-border bg-gh-bg/70 text-gh-muted',
     'session-db': 'border-gh-border bg-gh-bg/70 text-gh-muted',
   };
 
@@ -631,25 +682,58 @@ function DetailPanelHeader({
   );
 }
 
-function ArtifactEntryTree({ entry }: { entry: SessionArtifactEntry }) {
+function ArtifactEntryTree({
+  entry,
+  selectedPath,
+  onSelectFile,
+}: {
+  entry: SessionArtifactEntry;
+  selectedPath: string;
+  onSelectFile: (path: string) => void;
+}) {
   const isFolder = entry.kind === 'directory';
+  const isSelected = !isFolder && entry.path === selectedPath;
 
   return (
     <li className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-3 py-2">
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${isFolder ? 'bg-gh-accent/12 text-gh-accent' : 'bg-gh-border/70 text-gh-muted'}`}>
+        <span
+          className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${
+            isFolder ? 'bg-gh-accent/12 text-gh-accent' : isSelected ? 'bg-gh-active/15 text-gh-active' : 'bg-gh-border/70 text-gh-muted'
+          }`}
+        >
           {isFolder ? '▸' : '•'}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-medium text-gh-text">{entry.name}</span>
-            <span className="rounded-full border border-gh-border bg-gh-surface px-2 py-0.5 text-[11px] text-gh-muted">
-              {isFolder ? 'folder' : 'file'}
-            </span>
-            <span className="text-[11px] text-gh-muted">
-              {formatBytes(entry.sizeBytes)}
-            </span>
-          </div>
+          {isFolder ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-medium text-gh-text">{entry.name}</span>
+              <span className="rounded-full border border-gh-border bg-gh-surface px-2 py-0.5 text-[11px] text-gh-muted">
+                folder
+              </span>
+              <span className="text-[11px] text-gh-muted">
+                {formatBytes(entry.sizeBytes)}
+              </span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSelectFile(entry.path)}
+              className={`flex w-full flex-wrap items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface ${
+                isSelected
+                  ? 'border-gh-accent/40 bg-gh-accent/10 text-gh-text'
+                  : 'border-transparent bg-transparent text-gh-muted hover:border-gh-border hover:bg-gh-surface/60 hover:text-gh-text'
+              }`}
+            >
+              <span className="truncate text-sm font-medium">{entry.name}</span>
+              <span className="rounded-full border border-gh-border bg-gh-surface px-2 py-0.5 text-[11px] text-gh-muted">
+                file
+              </span>
+              <span className="text-[11px] text-gh-muted">
+                {formatBytes(entry.sizeBytes)}
+              </span>
+            </button>
+          )}
           <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gh-muted">
             <span className="font-mono">{entry.path}</span>
             <span>·</span>
@@ -661,7 +745,12 @@ function ArtifactEntryTree({ entry }: { entry: SessionArtifactEntry }) {
       {entry.children && entry.children.length > 0 && (
         <ul className="mt-2 space-y-2 pl-2">
           {entry.children.map((child) => (
-            <ArtifactEntryTree key={`${entry.path}/${child.name}`} entry={child} />
+            <ArtifactEntryTree
+              key={`${entry.path}/${child.name}`}
+              entry={child}
+              selectedPath={selectedPath}
+              onSelectFile={onSelectFile}
+            />
           ))}
         </ul>
       )}
@@ -669,110 +758,98 @@ function ArtifactEntryTree({ entry }: { entry: SessionArtifactEntry }) {
   );
 }
 
-function ArtifactGroupCard({ group }: { group: SessionArtifactGroup }) {
-  const entries = group.entries ?? [];
+function ArtifactGroupPanel({ group }: { group: SessionArtifactGroup }) {
+  const files = useMemo(() => collectArtifactFiles(group.entries ?? []), [group.entries]);
+  const [selectedPath, setSelectedPath] = useState(files[0]?.path ?? '');
 
-  return (
-    <section className="rounded-xl border border-gh-border bg-gh-surface/30 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-gh-text">{getArtifactGroupLabel(group)}</h3>
-            <span className="rounded-full border px-2 py-1 text-[11px] font-medium capitalize text-gh-muted">
-              {group.status}
-            </span>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-gh-muted">{getArtifactGroupDescription(group)}</p>
-        </div>
-        <span className="rounded-full border border-gh-border bg-gh-bg px-2 py-1 text-[11px] text-gh-muted">
-          {group.path}
-        </span>
-      </div>
-
-      {group.path === 'plan.md' && group.content ? (
-        <pre className="mt-3 whitespace-pre-wrap break-words rounded-lg border border-gh-border bg-gh-bg/70 p-3 text-xs leading-relaxed text-gh-text">
-          {truncateText(group.content, 600)}
-        </pre>
-      ) : null}
-
-      {entries.length > 0 ? (
-        <ul className="mt-3 space-y-2">
-          {entries.map((entry) => (
-            <ArtifactEntryTree key={entry.path} entry={entry} />
-          ))}
-        </ul>
-      ) : group.path !== 'plan.md' ? (
-        <p className="mt-3 text-xs text-gh-muted">No files found in this group.</p>
-      ) : null}
-    </section>
-  );
-}
-
-function SessionArtifactsPanel({ artifacts }: { artifacts: SessionArtifacts }) {
-  const [visibleGroups, setVisibleGroups] = useState<Set<SessionArtifactGroup['path']>>(
-    () => new Set(ARTIFACT_GROUP_ORDER),
-  );
-  const orderedGroups = [artifacts.plan, ...artifacts.folders].filter(
-    (group): group is SessionArtifactGroup => ARTIFACT_GROUP_ORDER.includes(group.path),
-  );
-  const groups = ARTIFACT_GROUP_ORDER
-    .map((path) => orderedGroups.find((group) => group.path === path))
-    .filter((group): group is SessionArtifactGroup => Boolean(group));
-  const visibleArtifactGroups = groups.filter((group) => visibleGroups.has(group.path));
-
-  function toggleGroup(groupPath: SessionArtifactGroup['path']) {
-    setVisibleGroups((previous) => {
-      const next = new Set(previous);
-      if (next.has(groupPath)) {
-        next.delete(groupPath);
-      } else {
-        next.add(groupPath);
+  useEffect(() => {
+    if (files.length === 0) {
+      if (selectedPath) {
+        setSelectedPath('');
       }
-      return next;
-    });
-  }
+      return;
+    }
+
+    if (!files.some((entry) => entry.path === selectedPath)) {
+      setSelectedPath(files[0].path);
+    }
+  }, [files, selectedPath]);
+
+  const selectedFile = files.find((entry) => entry.path === selectedPath) ?? files[0] ?? null;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gh-border bg-gh-surface/30 p-3">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-gh-muted/70">Artifact categories</span>
-        {ARTIFACT_GROUP_OPTIONS.map((option) => {
-          const isActive = visibleGroups.has(option.value);
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => toggleGroup(option.value)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface ${
-                isActive
-                  ? 'border-gh-accent/40 bg-gh-accent/10 text-gh-text'
-                  : 'border-gh-border bg-gh-bg/70 text-gh-muted hover:border-gh-border hover:text-gh-text'
-              }`}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => setVisibleGroups(new Set(ARTIFACT_GROUP_ORDER))}
-          className="rounded-full border border-gh-border bg-gh-bg/70 px-3 py-1 text-xs font-medium text-gh-muted transition-colors hover:border-gh-border hover:text-gh-text focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface"
-        >
-          Show all
-        </button>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-gh-border bg-gh-surface/30 px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-gh-text">{getArtifactGroupLabel(group)}</h3>
+              <span className="rounded-full border px-2 py-1 text-[11px] font-medium capitalize text-gh-muted">
+                {group.status}
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-gh-muted">{getArtifactGroupDescription(group)}</p>
+          </div>
+          <span className="rounded-full border border-gh-border bg-gh-bg px-2 py-1 text-[11px] text-gh-muted">
+            {group.path}
+          </span>
+        </div>
       </div>
 
-      <div className="mt-3 grid gap-3">
-        {visibleArtifactGroups.map((group) => (
-          <ArtifactGroupCard key={group.path} group={group} />
-        ))}
-        {visibleArtifactGroups.length === 0 && (
-          <div className="rounded-xl border border-dashed border-gh-border bg-gh-surface/20 p-4 text-sm text-gh-muted">
-            No artifact categories are currently selected.
+      {group.status !== 'ok' ? (
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+            {group.message ?? 'No artifact content is available for this tab.'}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(16rem,18rem)_minmax(0,1fr)]">
+          <aside className="min-h-0 overflow-y-auto border-r border-gh-border bg-gh-surface/20 p-3">
+            {files.length > 0 ? (
+              <ul className="space-y-2">
+                {group.entries?.map((entry) => (
+                  <ArtifactEntryTree
+                    key={entry.path}
+                    entry={entry}
+                    selectedPath={selectedPath}
+                    onSelectFile={setSelectedPath}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <div className="rounded-xl border border-dashed border-gh-border bg-gh-bg/50 p-4 text-sm text-gh-muted">
+                No text files were found in this artifact group.
+              </div>
+            )}
+          </aside>
+
+          <section className="min-h-0 overflow-y-auto p-4">
+            {selectedFile ? (
+              <div className="flex min-h-0 flex-col gap-3">
+                <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-gh-text">{selectedFile.name}</h4>
+                    <span className="rounded-full border border-gh-border bg-gh-bg px-2 py-0.5 text-[11px] text-gh-muted">
+                      file
+                    </span>
+                    <span className="rounded-full border border-gh-border bg-gh-bg px-2 py-0.5 text-[11px] text-gh-muted">
+                      {formatBytes(selectedFile.sizeBytes)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] font-mono text-gh-muted">{selectedFile.path}</p>
+                </div>
+                <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4">
+                  {renderArtifactContent(selectedFile)}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-gh-border bg-gh-surface/20 p-4 text-sm text-gh-muted">
+                Select a file to view its full content.
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -1776,6 +1853,8 @@ export function SessionDetail() {
   const activeTodos = (session.todos ?? []).filter((todo) => todo.status === 'in_progress').length;
   const blockedTodos = (session.todos ?? []).filter((todo) => todo.status === 'blocked').length;
   const completedTodos = (session.todos ?? []).filter((todo) => isDone(todo.status)).length;
+  const checkpointGroup = getArtifactGroupByPath(artifacts, 'checkpoints');
+  const researchGroup = getArtifactGroupByPath(artifacts, 'research');
   const detailTabs: SessionDetailTab[] = availableViews.map((option) => {
     const descriptionByValue: Record<SessionDetailView, string> = {
       main: `${session.messageCount} messages in the primary conversation.`,
@@ -1786,7 +1865,12 @@ export function SessionDetail() {
         ? `${activeTodos} active · ${blockedTodos} blocked · ${completedTodos}/${session.todos?.length ?? 0} done`
         : 'No todos are recorded for this session yet.',
       threads: `${activeThreadCount} running · ${completedThreadCount} done`,
-      artifacts: 'Plan, checkpoint, and research artifacts.',
+      checkpoints: checkpointGroup?.status === 'ok'
+        ? `${collectArtifactFiles(checkpointGroup.entries ?? []).length} checkpoint files available.`
+        : 'Checkpoint artifacts from this session.',
+      research: researchGroup?.status === 'ok'
+        ? `${collectArtifactFiles(researchGroup.entries ?? []).length} research files available.`
+        : 'Research artifacts from this session.',
       'session-db': 'Todo dependency graph with table preview fallback.',
     };
 
@@ -1796,11 +1880,17 @@ export function SessionDetail() {
       description: descriptionByValue[option.value],
       isCompleted: option.value === 'threads' ? completedThreadCount > 0 && activeThreadCount === 0 : undefined,
       isSubAgent: option.value === 'threads',
+      isArtifact: option.value === 'checkpoints' || option.value === 'research',
+      artifactKind: option.value === 'checkpoints' ? 'checkpoints' : option.value === 'research' ? 'research' : undefined,
       isPlan: option.value === 'plan',
       isPlanPending: option.value === 'plan' && session.isPlanPending,
       isTodos: option.value === 'todos',
       isMain: option.value === 'main',
-      accentColor: option.value === 'threads' ? 'sky' : 'blue',
+      accentColor: option.value === 'threads'
+        ? 'sky'
+        : option.value === 'research'
+          ? 'sky'
+          : 'blue',
     };
   });
   const detailPanelClassName = `flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`;
@@ -1832,6 +1922,7 @@ export function SessionDetail() {
           activeThread={selectedThread}
           dbViewMode={dbViewMode}
           selectedDbTable={selectedDbTable}
+          artifacts={artifacts}
         />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 xl:flex-row" role="region" aria-labelledby="session-detail-panel-heading">
@@ -1844,7 +1935,7 @@ export function SessionDetail() {
             id={getSessionDetailPanelId(resolvedView)}
             role="tabpanel"
             aria-labelledby={getSessionDetailTabId(resolvedView)}
-            className="min-h-0 flex-1 overflow-hidden rounded-xl border border-gh-border bg-gh-bg/20"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-bg/20"
           >
             {resolvedView === 'main' && (
               <MessageList messages={session.messages} />
@@ -1891,12 +1982,12 @@ export function SessionDetail() {
               )
             )}
 
-            {resolvedView === 'artifacts' && (
+            {resolvedView === 'checkpoints' && (
               <div className="flex min-h-0 flex-1 flex-col">
                 {artifactsLoading && !artifacts && (
                   <div className="flex-1 overflow-y-auto p-4">
                     <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                      Loading artifact files…
+                      Loading checkpoint files…
                     </div>
                   </div>
                 )}
@@ -1907,11 +1998,52 @@ export function SessionDetail() {
                     </div>
                   </div>
                 )}
-                {artifacts && <SessionArtifactsPanel artifacts={artifacts} />}
+                {artifacts && checkpointGroup && <ArtifactGroupPanel group={checkpointGroup} />}
+                {artifacts && !checkpointGroup && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      No checkpoint artifact group was returned for this session.
+                    </div>
+                  </div>
+                )}
                 {!artifactsLoading && !artifactsError && !artifacts && (
                   <div className="flex-1 overflow-y-auto p-4">
                     <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
-                      No artifact data was returned for this session.
+                      No checkpoint artifact data was returned for this session.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {resolvedView === 'research' && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {artifactsLoading && !artifacts && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      Loading research files…
+                    </div>
+                  </div>
+                )}
+                {artifactsError && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+                      {artifactsError}
+                    </div>
+                  </div>
+                )}
+                {artifacts && researchGroup && <ArtifactGroupPanel group={researchGroup} />}
+                {artifacts && !researchGroup && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      No research artifact group was returned for this session.
+                    </div>
+                  </div>
+                )}
+                {!artifactsLoading && !artifactsError && !artifacts && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      No research artifact data was returned for this session.
                     </div>
                   </div>
                 )}
