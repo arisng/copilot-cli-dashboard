@@ -63,12 +63,12 @@ type SessionUsageMetrics = {
   totalPremiumRequestsSource: SessionUsageMetricSource;
 };
 
-type SessionArtifactSectionName = 'checkpoints' | 'research';
+type SessionArtifactSectionName = 'checkpoints' | 'research' | 'files';
 type SqliteDatabase = ReturnType<typeof Database>;
 
 let sessionRootsCache: SessionRootsCache | null = null;
 const sessionSummaryCache = new Map<string, CachedSessionSummary>();
-const SESSION_ARTIFACT_SECTIONS: SessionArtifactSectionName[] = ['checkpoints', 'research'];
+const SESSION_ARTIFACT_SECTIONS: SessionArtifactSectionName[] = ['checkpoints', 'research', 'files'];
 const SESSION_DB_PREVIEW_LIMIT = 100;
 
 export class SessionDbInspectionError extends Error {

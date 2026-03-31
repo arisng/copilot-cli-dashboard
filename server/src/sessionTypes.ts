@@ -154,7 +154,7 @@ export interface SessionArtifactEntry {
 }
 
 export interface SessionArtifactGroup {
-  path: 'plan.md' | 'checkpoints' | 'research';
+  path: 'plan.md' | 'checkpoints' | 'research' | 'files';
   kind: 'file' | 'directory';
   exists: boolean;
   status: 'ok' | 'missing' | 'unreadable';
