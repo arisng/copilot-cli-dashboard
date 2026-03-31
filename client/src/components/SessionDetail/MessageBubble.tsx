@@ -1,37 +1,7 @@
 import React from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
-import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
-import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
-import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
-import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
-import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
-import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
-import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
-import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
-
-SyntaxHighlighter.registerLanguage('tsx', tsx);
-SyntaxHighlighter.registerLanguage('typescript', typescript);
-SyntaxHighlighter.registerLanguage('ts', typescript);
-SyntaxHighlighter.registerLanguage('javascript', javascript);
-SyntaxHighlighter.registerLanguage('js', javascript);
-SyntaxHighlighter.registerLanguage('jsx', jsx);
-SyntaxHighlighter.registerLanguage('bash', bash);
-SyntaxHighlighter.registerLanguage('sh', bash);
-SyntaxHighlighter.registerLanguage('json', json);
-SyntaxHighlighter.registerLanguage('yaml', yaml);
-SyntaxHighlighter.registerLanguage('yml', yaml);
-SyntaxHighlighter.registerLanguage('css', css);
-SyntaxHighlighter.registerLanguage('python', python);
-SyntaxHighlighter.registerLanguage('py', python);
-SyntaxHighlighter.registerLanguage('markdown', markdown);
-SyntaxHighlighter.registerLanguage('md', markdown);
 import type { ParsedMessage, ToolRequest } from '../../api/client.ts';
 import { RelativeTime } from '../shared/RelativeTime.tsx';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 interface Props {
   message: ParsedMessage;
@@ -675,18 +645,7 @@ export function MessageBubble({ message }: Props) {
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <div className="rounded-xl px-5 py-3 text-sm border border-gh-active/30 bg-gh-active/5 text-gh-text min-w-0">
             <div className="text-xs font-semibold text-gh-active mb-2 uppercase tracking-wide">Task complete</div>
-            <div className="prose prose-invert prose-sm max-w-none text-gh-text
-              [&_p]:my-2 [&_p]:leading-relaxed
-              [&_h1]:text-gh-text [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2
-              [&_h2]:text-gh-text [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1
-              [&_h3]:text-gh-text [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1
-              [&_ul]:my-2 [&_ul]:pl-4 [&_li]:my-0.5 [&_li]:leading-relaxed
-              [&_ol]:my-2 [&_ol]:pl-4
-              [&_strong]:text-gh-text [&_strong]:font-semibold
-              [&_code]:text-gh-accent [&_code]:bg-gh-bg [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono
-            ">
-              <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
-            </div>
+            <MarkdownRenderer content={message.content} variant="message" />
           </div>
           <RelativeTime timestamp={message.timestamp} className="text-gh-muted text-xs" />
         </div>
@@ -723,56 +682,7 @@ export function MessageBubble({ message }: Props) {
       <div className="rounded-xl px-5 py-3 text-sm bg-gh-surface border border-gh-border text-gh-text min-w-0">
         {message.reasoning && <ReasoningBlock text={message.reasoning} />}
         {message.content.trim() ? (
-          <div className="prose prose-invert prose-sm max-w-none text-gh-text
-            [&_p]:my-2 [&_p]:leading-relaxed
-            [&_h1]:text-gh-text [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2
-            [&_h2]:text-gh-text [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1
-            [&_h3]:text-gh-text [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1
-            [&_ul]:my-2 [&_ul]:pl-4 [&_li]:my-0.5 [&_li]:leading-relaxed
-            [&_ol]:my-2 [&_ol]:pl-4
-            [&_strong]:text-gh-text [&_strong]:font-semibold
-            [&_a]:text-gh-accent [&_a]:no-underline hover:[&_a]:underline
-            [&_hr]:border-gh-border [&_hr]:my-4
-            [&_blockquote]:border-l-2 [&_blockquote]:border-gh-border [&_blockquote]:pl-3 [&_blockquote]:text-gh-muted
-            [&_code]:text-gh-accent [&_code]:bg-gh-bg [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono
-            [&_table]:w-full [&_table]:border-collapse [&_table]:my-3 [&_table]:text-sm
-            [&_th]:text-left [&_th]:px-3 [&_th]:py-1.5 [&_th]:border [&_th]:border-gh-border [&_th]:bg-gh-surface [&_th]:text-gh-text [&_th]:font-medium
-            [&_td]:px-3 [&_td]:py-1.5 [&_td]:border [&_td]:border-gh-border [&_td]:text-gh-muted
-          ">
-            <Markdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ className, children, ...props }) {
-                  const match = /language-(\w+)/.exec(className ?? '');
-                  const isBlock = !!match;
-                  if (isBlock) {
-                    return (
-                      <SyntaxHighlighter
-                        style={vscDarkPlus}
-                        language={match[1]}
-                        PreTag="div"
-                        customStyle={{
-                          margin: '0.75rem 0',
-                          borderRadius: '0.5rem',
-                          fontSize: '0.75rem',
-                          border: '1px solid #30363d',
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    );
-                  }
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-              }}
-            >
-              {message.content}
-            </Markdown>
-          </div>
+          <MarkdownRenderer content={message.content} variant="message" />
         ) : (
           message.toolRequests && message.toolRequests.length > 0 && (
             <span className="text-gh-muted text-xs italic mb-1 block">Using tools…</span>
