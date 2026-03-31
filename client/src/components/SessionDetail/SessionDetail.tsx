@@ -1,8 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { Components } from 'react-markdown';
 import { useSession } from '../../hooks/useSession.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import {
@@ -28,6 +25,7 @@ import { SessionTabNav, getSessionDetailPanelId, getSessionDetailTabId, type Ses
 import { modeBorderClass } from '../shared/modeBadge.tsx';
 import { MessageBubble } from './MessageBubble.tsx';
 import { RelativeTime } from '../shared/RelativeTime.tsx';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import type {
   ActiveSubAgent,
   ParsedMessage,
@@ -41,93 +39,9 @@ import type {
 } from '../../api/client.ts';
 import { fetchSessionArtifacts, fetchSessionDb } from '../../api/client.ts';
 
-// ── Plan markdown components ───────────────────────────────────────────────
+// ── Shared markdown renderer imported from ../shared/MarkdownRenderer ─────
 
-const planComponents: Components = {
-  h1: ({ children }) => (
-    <h1 className="text-base font-bold text-gh-text border-b border-gh-border pb-2 mb-4 mt-6 first:mt-0">{children}</h1>
-  ),
-  h2: ({ children }) => (
-    <h2 className="text-sm font-semibold text-gh-accent mt-5 mb-2">{children}</h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="text-xs font-semibold text-gh-text uppercase tracking-wide mt-4 mb-1.5 opacity-80">{children}</h3>
-  ),
-  p: ({ children }) => (
-    <p className="text-sm text-gh-text leading-relaxed mb-3">{children}</p>
-  ),
-  ul: ({ children }) => (
-    <ul className="space-y-1 mb-3 pl-0">{children}</ul>
-  ),
-  ol: ({ children }) => (
-    <ol className="space-y-1.5 mb-3 pl-0 list-none counter-reset-[item]">{children}</ol>
-  ),
-  li: ({ children, ...props }) => {
-    // Detect task list items (checkboxes)
-    const childArr = Array.isArray(children) ? children : [children];
-    const hasCheckbox = childArr.some(
-      (c) => typeof c === 'object' && c !== null && (c as React.ReactElement)?.type === 'input'
-    );
-    if (hasCheckbox) {
-      return (
-        <li className="flex items-start gap-2 text-sm text-gh-text py-0.5" {...props}>{children}</li>
-      );
-    }
-    return (
-      <li className="flex items-start gap-2 text-sm text-gh-text py-0.5 before:content-['›'] before:text-gh-accent before:font-bold before:shrink-0 before:mt-px" {...props}>{children}</li>
-    );
-  },
-  input: ({ type, checked }) => {
-    if (type === 'checkbox') {
-      return (
-        <span className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 mt-0.5 ${
-          checked ? 'bg-gh-active border-gh-active text-white' : 'border-gh-border bg-gh-surface'
-        }`}>
-          {checked && (
-            <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
-              <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
-            </svg>
-          )}
-        </span>
-      );
-    }
-    return <input type={type} readOnly />;
-  },
-  code: ({ inline, children }: { inline?: boolean; children?: React.ReactNode }) =>
-    inline ? (
-      <code className="text-xs font-mono bg-gh-surface text-gh-accent px-1.5 py-0.5 rounded border border-gh-border/50">{children}</code>
-    ) : (
-      <code>{children}</code>
-    ),
-  pre: ({ children }) => (
-    <pre className="bg-gh-surface border border-gh-border rounded-lg p-3 overflow-x-auto text-xs font-mono text-gh-text mb-3 leading-relaxed">{children}</pre>
-  ),
-  blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-gh-accent/50 pl-3 text-gh-muted italic text-sm mb-3">{children}</blockquote>
-  ),
-  strong: ({ children }) => (
-    <strong className="font-semibold text-gh-text">{children}</strong>
-  ),
-  a: ({ children, href }) => (
-    <a href={href} className="text-gh-accent hover:underline" target="_blank" rel="noreferrer">{children}</a>
-  ),
-  table: ({ children }) => (
-    <div className="overflow-x-auto mb-4">
-      <table className="w-full text-xs border-collapse">{children}</table>
-    </div>
-  ),
-  thead: ({ children }) => <thead className="bg-gh-surface">{children}</thead>,
-  th: ({ children }) => (
-    <th className="text-left px-3 py-2 text-gh-muted font-medium border border-gh-border">{children}</th>
-  ),
-  td: ({ children }) => (
-    <td className="px-3 py-2 text-gh-text border border-gh-border">{children}</td>
-  ),
-  tr: ({ children }) => <tr className="even:bg-gh-surface/30">{children}</tr>,
-  hr: () => <hr className="border-gh-border my-4" />,
-};
-
-type SessionDetailView = 'main' | 'plan' | 'todos' | 'threads' | 'checkpoints' | 'research' | 'session-db';
+type SessionDetailView = 'main' | 'plan' | 'todos' | 'threads' | 'checkpoints' | 'research' | 'files' | 'session-db';
 type SessionDbViewMode = 'graph' | 'table';
 
 const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = [
@@ -137,6 +51,7 @@ const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = 
   { value: 'threads', label: 'Sub-agent threads' },
   { value: 'checkpoints', label: 'Checkpoints' },
   { value: 'research', label: 'Research' },
+  { value: 'files', label: 'Files' },
   { value: 'session-db', label: 'Session DB' },
 ];
 
@@ -147,6 +62,7 @@ const DETAIL_VIEW_DESCRIPTIONS: Partial<Record<SessionDetailView, string>> = {
   threads: 'Sub-agent conversations with grouped selection.',
   checkpoints: 'Captured checkpoint files and snapshots.',
   research: 'Research notes, references, and supporting files.',
+  files: 'Additional files and documents from the session.',
   'session-db': 'Todo dependency graph with a table preview fallback.',
 };
 
@@ -272,14 +188,11 @@ function renderArtifactContent(entry: SessionArtifactEntry, forceMarkdown = fals
   }
 
   if (forceMarkdown || /\.(md|markdown|mdown|mkdn|mkd)$/i.test(entry.name)) {
-    return <Markdown remarkPlugins={[remarkGfm]} components={planComponents}>{content}</Markdown>;
+    return <MarkdownRenderer content={content} variant="desktop" />;
   }
 
-  return (
-    <pre className="whitespace-pre-wrap break-words rounded-xl border border-gh-border bg-gh-bg/70 p-4 text-xs leading-relaxed text-gh-text">
-      {content}
-    </pre>
-  );
+  // For non-markdown files, still use MarkdownRenderer but with plain text handling
+  return <MarkdownRenderer content={content} variant="desktop" />;
 }
 
 function buildTodoItemsFromDb(
@@ -450,7 +363,7 @@ function PlanView({ content, isPending }: { content: string; isPending: boolean 
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-6">
-        <Markdown remarkPlugins={[remarkGfm]} components={planComponents}>{content}</Markdown>
+        <MarkdownRenderer content={content} variant="desktop" />
       </div>
     </div>
   );
@@ -595,8 +508,10 @@ function DetailPanelHeader({
   const completedTodos = todos.filter((todo) => isDone(todo.status)).length;
   const checkpointGroup = getArtifactGroupByPath(artifacts, 'checkpoints');
   const researchGroup = getArtifactGroupByPath(artifacts, 'research');
+  const filesGroup = getArtifactGroupByPath(artifacts, 'files');
   const checkpointFileCount = checkpointGroup ? collectArtifactFiles(checkpointGroup.entries ?? []).length : 0;
   const researchFileCount = researchGroup ? collectArtifactFiles(researchGroup.entries ?? []).length : 0;
+  const filesFileCount = filesGroup ? collectArtifactFiles(filesGroup.entries ?? []).length : 0;
 
   const titleByView: Record<SessionDetailView, string> = {
     main: 'Main session',
@@ -605,6 +520,7 @@ function DetailPanelHeader({
     threads: 'Sub-agent threads',
     checkpoints: 'Checkpoints',
     research: 'Research',
+    files: 'Files',
     'session-db': dbViewMode === 'graph' ? 'Todo dependency graph' : 'Session DB table preview',
   };
 
@@ -625,6 +541,9 @@ function DetailPanelHeader({
     research: researchGroup?.status === 'ok'
       ? `${researchFileCount} research file${researchFileCount === 1 ? '' : 's'} available.`
       : 'Research artifacts from the current session.',
+    files: filesGroup?.status === 'ok'
+      ? `${filesFileCount} file${filesFileCount === 1 ? '' : 's'} available.`
+      : 'Additional files from the current session.',
     'session-db': dbViewMode === 'graph'
       ? 'Read-only todo dependency graph with a table preview fallback.'
       : 'Read-only schema and row preview for the session database.',
@@ -637,6 +556,7 @@ function DetailPanelHeader({
     threads: activeThread ? (activeThread.isCompleted ? 'Done' : 'Running') : undefined,
     checkpoints: checkpointGroup?.status === 'ok' ? `${checkpointFileCount} files` : 'Artifacts',
     research: researchGroup?.status === 'ok' ? `${researchFileCount} files` : 'Artifacts',
+    files: filesGroup?.status === 'ok' ? `${filesFileCount} files` : 'Artifacts',
     'session-db': dbViewMode === 'graph'
       ? 'Graph'
       : selectedDbTable
@@ -657,6 +577,7 @@ function DetailPanelHeader({
       : 'border-gh-active/30 bg-gh-active/10 text-gh-active',
     checkpoints: 'border-gh-border bg-gh-bg/70 text-gh-muted',
     research: 'border-gh-border bg-gh-bg/70 text-gh-muted',
+    files: 'border-gh-border bg-gh-bg/70 text-gh-muted',
     'session-db': 'border-gh-border bg-gh-bg/70 text-gh-muted',
   };
 
@@ -1862,6 +1783,18 @@ export function SessionDetail() {
       return subAgents.length > 0;
     }
 
+    if (option.value === 'checkpoints') {
+      return checkpointGroup?.status === 'ok';
+    }
+
+    if (option.value === 'research') {
+      return researchGroup?.status === 'ok';
+    }
+
+    if (option.value === 'files') {
+      return filesGroup?.status === 'ok';
+    }
+
     return true;
   });
   const resolvedView = availableViews.some((option) => option.value === activeView) ? activeView : 'main';
@@ -1873,6 +1806,7 @@ export function SessionDetail() {
   const completedTodos = (session.todos ?? []).filter((todo) => isDone(todo.status)).length;
   const checkpointGroup = getArtifactGroupByPath(artifacts, 'checkpoints');
   const researchGroup = getArtifactGroupByPath(artifacts, 'research');
+  const filesGroup = getArtifactGroupByPath(artifacts, 'files');
   const detailTabs: SessionDetailTab[] = availableViews.map((option) => {
     const descriptionByValue: Record<SessionDetailView, string> = {
       main: `${session.messageCount} messages in the primary conversation.`,
@@ -1889,6 +1823,9 @@ export function SessionDetail() {
       research: researchGroup?.status === 'ok'
         ? `${collectArtifactFiles(researchGroup.entries ?? []).length} research files available.`
         : 'Research artifacts from this session.',
+      files: filesGroup?.status === 'ok'
+        ? `${collectArtifactFiles(filesGroup.entries ?? []).length} files available.`
+        : 'Additional files from this session.',
       'session-db': 'Todo dependency graph with table preview fallback.',
     };
 
@@ -1898,8 +1835,8 @@ export function SessionDetail() {
       description: descriptionByValue[option.value],
       isCompleted: option.value === 'threads' ? completedThreadCount > 0 && activeThreadCount === 0 : undefined,
       isSubAgent: option.value === 'threads',
-      isArtifact: option.value === 'checkpoints' || option.value === 'research',
-      artifactKind: option.value === 'checkpoints' ? 'checkpoints' : option.value === 'research' ? 'research' : undefined,
+      isArtifact: option.value === 'checkpoints' || option.value === 'research' || option.value === 'files',
+      artifactKind: option.value === 'checkpoints' ? 'checkpoints' : option.value === 'research' ? 'research' : option.value === 'files' ? 'files' : undefined,
       isPlan: option.value === 'plan',
       isPlanPending: option.value === 'plan' && session.isPlanPending,
       isTodos: option.value === 'todos',
@@ -2067,6 +2004,40 @@ export function SessionDetail() {
                   <div className="flex-1 overflow-y-auto p-4">
                     <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
                       No research artifact data was returned for this session.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {resolvedView === 'files' && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {artifactsLoading && !artifacts && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      Loading files…
+                    </div>
+                  </div>
+                )}
+                {artifactsError && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+                      {artifactsError}
+                    </div>
+                  </div>
+                )}
+                {artifacts && filesGroup && <ArtifactGroupPanel group={filesGroup} />}
+                {artifacts && !filesGroup && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      No files artifact group was returned for this session.
+                    </div>
+                  </div>
+                )}
+                {!artifactsLoading && !artifactsError && !artifacts && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
+                      No files artifact data was returned for this session.
                     </div>
                   </div>
                 )}

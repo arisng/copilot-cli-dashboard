@@ -11,7 +11,7 @@ export interface SessionDetailTab {
   isCompleted?: boolean;
   isSubAgent: boolean;
   isArtifact?: boolean;
-  artifactKind?: 'checkpoints' | 'research';
+  artifactKind?: 'checkpoints' | 'research' | 'files';
   isPlan?: boolean;
   isPlanPending?: boolean;
   isTodos?: boolean;
