@@ -15,17 +15,73 @@ client/src/
 │   ├── shared/
 │   │   ├── Layout.tsx          # nav bar, server-down banner, notification button
 │   │   ├── RelativeTime.tsx    # "3m ago" display
-│   │   └── LoadingSpinner.tsx
+│   │   ├── LoadingSpinner.tsx
+│   │   └── MarkdownRenderer/   # shared markdown rendering component
+│   │       ├── MarkdownRenderer.tsx
+│   │       └── __fixtures__/   # test fixtures for complex markdown
 │   ├── SessionList/
 │   │   ├── SessionList.tsx     # table of active (isOpen) sessions
 │   │   ├── SessionRow.tsx      # single row with status badge + copy-branch
 │   │   └── AttentionBadge.tsx
-│   └── SessionDetail/
-│       ├── SessionDetail.tsx   # message thread, auto-scrolls to bottom
-│       ├── SessionMeta.tsx     # title, status badges, meta bar
-│       └── MessageBubble.tsx   # renders user/assistant/task_complete messages
+│   ├── SessionDetail/
+│   │   ├── SessionDetail.tsx   # message thread, auto-scrolls to bottom
+│   │   ├── SessionMeta.tsx     # title, status badges, meta bar
+│   │   └── MessageBubble.tsx   # renders user/assistant/task_complete messages
+│   └── mobile/                 # Mobile-optimized views
+│       ├── MobileSessionList.tsx
+│       └── MobileSessionDetail.tsx
 └── styles/globals.css          # @font-face (JetBrains Mono) + scrollbar styles
 ```
+
+## Markdown Rendering
+
+The `MarkdownRenderer` component provides consistent markdown rendering across desktop, mobile, and message surfaces.
+
+### Usage
+
+```tsx
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
+
+// Desktop variant (default)
+<MarkdownRenderer content={planContent} variant="desktop" />
+
+// Mobile variant
+<MarkdownRenderer content={planContent} variant="mobile" />
+
+// Message bubble variant
+<MarkdownRenderer content={messageContent} variant="message" />
+```
+
+### Supported Features
+
+| Feature | Desktop | Mobile | Message |
+|---------|---------|--------|---------|
+| Headings (H1-H6) | ✅ | ✅ | ✅ |
+| Paragraphs | ✅ | ✅ | ✅ |
+| Bold, Italic, Strikethrough | ✅ | ✅ | ✅ |
+| Inline code | ✅ | ✅ | ✅ |
+| Fenced code blocks | ✅ + syntax highlight | ✅ + syntax highlight | ✅ + syntax highlight |
+| Unordered lists | ✅ | ✅ | ✅ |
+| Ordered lists | ✅ | ✅ | ✅ |
+| Nested lists (mixed) | ✅ | ✅ | ✅ |
+| Task lists (`- [ ]`) | ✅ | ✅ | ✅ |
+| Tables | ✅ | ✅ | ✅ |
+| Blockquotes | ✅ | ✅ | ✅ |
+| Horizontal rules | ✅ | ✅ | ✅ |
+| Links (external) | ✅ (new tab) | ✅ (new tab) | ✅ (new tab) |
+| XML-like tags | ✅ (preserved) | ✅ (preserved) | ✅ (preserved) |
+
+### Security
+
+- Content is sanitized to remove `<script>` tags and `javascript:` URLs
+- External links open in new tab with `rel="noopener noreferrer nofollow"`
+- XML-like tags (e.g., `<history>`, `<analysis>`) are preserved as text
+
+### Known Limitations
+
+- Very large documents (>2MB) may impact performance
+- Tables on mobile require horizontal scrolling for wide content
+- Code blocks don't have line numbers
 
 ## MessageBubble Tool Rendering
 
