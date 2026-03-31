@@ -1,7 +1,7 @@
 ---
 title: "Session Detail column 2 UX/UI feedback: tab rail primacy, artifact filters, and todo-graph session.db"
 type: "Feature"
-status: "Proposed"
+status: "Resolved"
 author: "Copilot"
 created: "2026-03-25"
 priority: "Medium"

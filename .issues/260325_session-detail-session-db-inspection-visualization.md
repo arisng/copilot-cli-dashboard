@@ -1,7 +1,7 @@
 ---
 title: "Inspect session.db schema and visualize session-state data in Session Detail"
 type: "Feature"
-status: "Proposed"
+status: "Resolved"
 author: "Copilot"
 created: "2026-03-25"
 priority: "Medium"
