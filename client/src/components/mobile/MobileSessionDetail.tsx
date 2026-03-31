@@ -1,13 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { Components } from 'react-markdown';
 import { Link, useParams } from 'react-router-dom';
 import type { ActiveSubAgent, ParsedMessage, SessionDetail, TodoItem, ToolRequest } from '../../api/client.ts';
 import { useSession } from '../../hooks/useSession.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { MobileInfoCard } from './MobileInfoCard.tsx';
 import { getMobileSessionState } from './mobileSessionState.ts';
 import {
@@ -64,51 +62,7 @@ const TODO_STATUS_CONFIG: Record<string, { label: string; dot: string; accent: s
   },
 };
 
-const mobilePlanComponents: Components = {
-  h1: ({ children }) => (
-    <h1 className="mb-3 border-b border-gh-border pb-2 text-base font-semibold text-gh-text first:mt-0">{children}</h1>
-  ),
-  h2: ({ children }) => <h2 className="mb-2 mt-4 text-sm font-semibold text-gh-accent">{children}</h2>,
-  h3: ({ children }) => (
-    <h3 className="mb-1.5 mt-4 text-xs font-semibold uppercase tracking-wide text-gh-muted">{children}</h3>
-  ),
-  p: ({ children }) => <p className="mb-3 text-sm leading-relaxed text-gh-text">{children}</p>,
-  ul: ({ children }) => <ul className="mb-3 space-y-1.5 pl-4 text-sm text-gh-text">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-3 space-y-1.5 pl-4 text-sm text-gh-text">{children}</ol>,
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold text-gh-text">{children}</strong>,
-  blockquote: ({ children }) => (
-    <blockquote className="mb-3 border-l-2 border-gh-accent/50 pl-3 text-sm italic text-gh-muted">{children}</blockquote>
-  ),
-  code: ({ inline, children }: { inline?: boolean; children?: ReactNode }) =>
-    inline ? (
-      <code className="rounded border border-gh-border/60 bg-gh-bg px-1.5 py-0.5 font-mono text-xs text-gh-accent">
-        {children}
-      </code>
-    ) : (
-      <code>{children}</code>
-    ),
-  pre: ({ children }) => (
-    <pre className="mb-3 overflow-x-auto rounded-xl border border-gh-border bg-gh-bg p-3 text-xs leading-relaxed text-gh-text">
-      {children}
-    </pre>
-  ),
-  a: ({ children, href }) => (
-    <a href={href} className="text-gh-accent hover:underline" target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
-  table: ({ children }) => (
-    <div className="mb-3 overflow-x-auto rounded-xl border border-gh-border">
-      <table className="min-w-full text-left text-xs">{children}</table>
-    </div>
-  ),
-  thead: ({ children }) => <thead className="bg-gh-bg/80 text-gh-muted">{children}</thead>,
-  tbody: ({ children }) => <tbody className="divide-y divide-gh-border/60">{children}</tbody>,
-  th: ({ children }) => <th className="px-3 py-2 font-medium">{children}</th>,
-  td: ({ children }) => <td className="px-3 py-2 align-top text-gh-text">{children}</td>,
-  hr: () => <hr className="my-4 border-gh-border" />,
-};
+// ── Shared markdown renderer imported from ../shared/MarkdownRenderer ─────
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -908,9 +862,7 @@ function WorkPanel({ session, todos }: { session: SessionDetail; todos: TodoItem
               ) : null}
 
               {session.planContent ? (
-                <Markdown remarkPlugins={[remarkGfm]} components={mobilePlanComponents}>
-                  {session.planContent}
-                </Markdown>
+                <MarkdownRenderer content={session.planContent} variant="mobile" />
               ) : (
                 <p className="text-sm leading-relaxed text-gh-muted">
                   Plan content has not been captured yet. The desktop view may still have more context.
