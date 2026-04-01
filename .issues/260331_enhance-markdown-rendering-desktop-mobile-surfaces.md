@@ -1,9 +1,10 @@
 ---
 title: "Enhance markdown rendering across desktop and mobile session artifact surfaces"
 type: "Feature"
-status: "Proposed"
+status: "Completed"
 author: "Copilot"
 created: "2026-03-31"
+completed: "2026-03-31"
 priority: "High"
 ---
 
@@ -35,19 +36,19 @@ Primary target content includes session artifacts under Copilot CLI session stat
 
 ## Requirements
 
-- [ ] Inventory every markdown display surface in the client (desktop and mobile) and document the coverage list.
-- [ ] Introduce or consolidate a shared markdown renderer abstraction/component used by all surfaces.
-- [ ] Support at minimum: headings, links, inline code, fenced code blocks, blockquotes, ordered/unordered lists, task lists, tables, horizontal rules, and images.
-- [ ] Define and implement handling for mixed markdown + XML-like content blocks in artifacts (preserve readable output, avoid flattening structure).
-- [ ] Preserve list hierarchy for ordered lists containing nested unordered lists (including multi-level nesting with code spans and bold text).
-- [ ] Ensure long lines and large code blocks are handled with horizontal scroll or wrap rules that do not break layout.
-- [ ] Apply safe rendering defaults (sanitization/allowlist policy) to avoid unsafe HTML/script injection.
-- [ ] Ensure internal navigation links and external links behave consistently across desktop and mobile.
-- [ ] Extend artifact handling to include `files` folder markdown/text documents in addition to `plan.md`, `checkpoints`, and `research`.
-- [ ] Add loading, empty, and parse-error states where artifact markdown cannot be rendered.
-- [ ] Add or update tests for renderer parity between desktop and mobile.
-- [ ] Add regression fixtures that include mixed markdown + XML-like wrappers and nested list combinations similar to Copilot session artifact history logs.
-- [ ] Update client documentation with supported markdown features and known limitations.
+- [x] Inventory every markdown display surface in the client (desktop and mobile) and document the coverage list.
+- [x] Introduce or consolidate a shared markdown renderer abstraction/component used by all surfaces.
+- [x] Support at minimum: headings, links, inline code, fenced code blocks, blockquotes, ordered/unordered lists, task lists, tables, horizontal rules, and images.
+- [x] Define and implement handling for mixed markdown + XML-like content blocks in artifacts (preserve readable output, avoid flattening structure).
+- [x] Preserve list hierarchy for ordered lists containing nested unordered lists (including multi-level nesting with code spans and bold text).
+- [x] Ensure long lines and large code blocks are handled with horizontal scroll or wrap rules that do not break layout.
+- [x] Apply safe rendering defaults (sanitization/allowlist policy) to avoid unsafe HTML/script injection.
+- [x] Ensure internal navigation links and external links behave consistently across desktop and mobile.
+- [x] Extend artifact handling to include `files` folder markdown/text documents in addition to `plan.md`, `checkpoints`, and `research`.
+- [x] Add loading, empty, and parse-error states where artifact markdown cannot be rendered.
+- [x] Add or update tests for renderer parity between desktop and mobile.
+- [x] Add regression fixtures that include mixed markdown + XML-like wrappers and nested list combinations similar to Copilot session artifact history logs.
+- [x] Update client documentation with supported markdown features and known limitations.
 
 ## Candidate Impacted Areas
 
@@ -59,13 +60,13 @@ Primary target content includes session artifacts under Copilot CLI session stat
 
 ## Acceptance Criteria
 
-- [ ] The same markdown artifact renders with consistent structure and styling on desktop and mobile views.
-- [ ] `plan.md`, `checkpoints`, `research`, and `files` artifacts are all rendered through the shared markdown pathway.
-- [ ] Tables and fenced code blocks are readable on narrow mobile widths without content clipping.
-- [ ] A mixed markdown/XML artifact example (for example a `<history>` wrapper containing ordered items and nested bullets) renders without collapsing list hierarchy.
-- [ ] Ordered list items with nested unordered sub-items display with correct indentation, numbering, and bullet nesting on both desktop and mobile.
-- [ ] Unsafe markdown/HTML content is blocked or sanitized according to policy.
-- [ ] Regression tests pass for representative markdown fixtures (simple, complex, malformed).
+- [x] The same markdown artifact renders with consistent structure and styling on desktop and mobile views.
+- [x] `plan.md`, `checkpoints`, `research`, and `files` artifacts are all rendered through the shared markdown pathway.
+- [x] Tables and fenced code blocks are readable on narrow mobile widths without content clipping.
+- [x] A mixed markdown/XML artifact example (for example a `<history>` wrapper containing ordered items and nested bullets) renders without collapsing list hierarchy.
+- [x] Ordered list items with nested unordered sub-items display with correct indentation, numbering, and bullet nesting on both desktop and mobile.
+- [x] Unsafe markdown/HTML content is blocked or sanitized according to policy.
+- [x] Regression tests pass for representative markdown fixtures (simple, complex, malformed).
 
 ## Example Edge Case Fixture
 
