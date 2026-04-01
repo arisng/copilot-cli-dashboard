@@ -1770,6 +1770,10 @@ export function SessionDetail() {
   );
   if (!session) return null;
 
+  const checkpointGroup = getArtifactGroupByPath(artifacts, 'checkpoints');
+  const researchGroup = getArtifactGroupByPath(artifacts, 'research');
+  const filesGroup = getArtifactGroupByPath(artifacts, 'files');
+
   const availableViews = DETAIL_VIEW_OPTIONS.filter((option) => {
     if (option.value === 'plan') {
       return hasPlan;
@@ -1804,9 +1808,6 @@ export function SessionDetail() {
   const activeTodos = (session.todos ?? []).filter((todo) => todo.status === 'in_progress').length;
   const blockedTodos = (session.todos ?? []).filter((todo) => todo.status === 'blocked').length;
   const completedTodos = (session.todos ?? []).filter((todo) => isDone(todo.status)).length;
-  const checkpointGroup = getArtifactGroupByPath(artifacts, 'checkpoints');
-  const researchGroup = getArtifactGroupByPath(artifacts, 'research');
-  const filesGroup = getArtifactGroupByPath(artifacts, 'files');
   const detailTabs: SessionDetailTab[] = availableViews.map((option) => {
     const descriptionByValue: Record<SessionDetailView, string> = {
       main: `${session.messageCount} messages in the primary conversation.`,
