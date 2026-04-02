@@ -27,11 +27,58 @@ client/src/
 │   │   ├── SessionDetail.tsx   # message thread, auto-scrolls to bottom
 │   │   ├── SessionMeta.tsx     # title, status badges, meta bar
 │   │   └── MessageBubble.tsx   # renders user/assistant/task_complete messages
+│   ├── SessionWatchMode/       # Multi-session watch mode
+│   │   ├── SessionWatchMode.tsx # side-by-side session panes
+│   │   └── SessionWatchPane.tsx # single pane with close control
 │   └── mobile/                 # Mobile-optimized views
 │       ├── MobileSessionList.tsx
-│       └── MobileSessionDetail.tsx
+│       ├── MobileSessionDetail.tsx
+│       └── MobileSessionPane.tsx # Reusable mobile session UI
 └── styles/globals.css          # @font-face (JetBrains Mono) + scrollbar styles
 ```
+
+## Multi-Session Watch Mode
+
+The **Watch Mode** (`/watch?ids=...`) enables users to monitor multiple sessions side-by-side on desktop.
+
+### Key Features
+
+- **Viewport-based pane sizing**: Panes are sized based on available width (`MIN_PANE_WIDTH = 360px`, max 4 panes).
+- **Horizontal scrolling**: Overflow sessions scroll horizontally without breaking layout.
+- **Independent polling**: Each pane uses its own `useSession` hook for live updates.
+- **Pane removal**: Each pane has a × button to remove it from the watch view.
+
+### Mobile Session Pane Reuse
+
+The watch mode reuses the mobile session layout rather than creating a new desktop shell:
+
+```tsx
+// MobileSessionPane.tsx exports two variants:
+
+// 1. Data-fetching wrapper (used in mobile routes)
+export function MobileSessionPane({ sessionId, showBackLinks }) {
+  const { session, loading, error } = useSession(sessionId);
+  // ...
+  return <MobileSessionPaneInner session={session} ... />;
+}
+
+// 2. Presentation-only component (used in watch mode)
+export function MobileSessionPaneInner({ session, showBackLinks, error }) {
+  // Full mobile UI: header, status, tabs (overview, activity, work, agents)
+}
+```
+
+This pattern ensures:
+- **Consistency**: Mobile and watch mode show identical session content.
+- **Live updates**: Each pane independently polls every 5 seconds.
+- **Isolation**: Tab state (active section, selected stream) is per-pane.
+
+### Bulk Selection Flow
+
+1. User checks sessions in `SessionList` (list or grid view).
+2. "Watch selected" button appears in header.
+3. Clicking navigates to `/watch?ids=id1,id2,id3`.
+4. `SessionWatchMode` parses IDs and renders a pane for each.
 
 ## Markdown Rendering
 
