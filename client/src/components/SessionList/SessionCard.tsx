@@ -8,6 +8,8 @@ import { SessionStatusBadge } from './SessionStatusBadge.tsx';
 
 interface Props {
   session: SessionSummary;
+  selected?: boolean;
+  onSelectToggle?: () => void;
 }
 
 function InfoBlock({
@@ -133,7 +135,7 @@ function LastMessage({ message }: { message: MessagePreview }) {
   );
 }
 
-export function SessionCard({ session }: Props) {
+export function SessionCard({ session, selected = false, onSelectToggle }: Props) {
   const navigate = useNavigate();
   const previews = session.previewMessages ?? [];
   const lastMessage = previews[previews.length - 1];
@@ -168,15 +170,29 @@ export function SessionCard({ session }: Props) {
           ? 'border border-gh-active/50 hover:border-gh-active/70'
           : 'border border-gh-border hover:border-gh-border/80 hover:bg-gh-surface/80'
         }
+        ${selected ? 'ring-2 ring-gh-accent/40 bg-gh-accent/5' : ''}
       `}
     >
       <div className="px-4 pt-3 pb-3">
         <div className="flex items-start justify-between gap-2">
           <SessionStatusBadge session={session} pulse={false} />
-          <RelativeTime
-            timestamp={session.lastActivityAt}
-            className="shrink-0 text-xs font-semibold tabular-nums text-gh-text/85"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={(e) => {
+                e.stopPropagation();
+                onSelectToggle?.();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Select session ${session.title}`}
+              className="h-4 w-4 rounded border-gh-border bg-gh-bg text-gh-accent focus:ring-gh-accent/40"
+            />
+            <RelativeTime
+              timestamp={session.lastActivityAt}
+              className="shrink-0 text-xs font-semibold tabular-nums text-gh-text/85"
+            />
+          </div>
         </div>
 
         <p className="mt-2 text-gh-text text-sm font-semibold leading-5 line-clamp-2">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSessions } from '../../hooks/useSessions.ts';
 import {
   DEFAULT_SESSION_BROWSE_STATE,
@@ -39,6 +40,7 @@ const MAIN_LIST_PAGE_SIZE = 25;
 
 export function SessionList() {
   const { sessions, loading, error } = useSessions();
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(
     () => (localStorage.getItem('sessionViewMode') as 'list' | 'grid') ?? 'list',
   );
@@ -46,6 +48,8 @@ export function SessionList() {
     ...DEFAULT_SESSION_BROWSE_STATE,
     pageSize: MAIN_LIST_PAGE_SIZE,
   }));
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isSelectionActive = selectedIds.size > 0;
 
   function toggleView(mode: 'list' | 'grid') {
     setViewMode(mode);
@@ -120,46 +124,106 @@ export function SessionList() {
     }));
   }
 
+  function toggleSelection(id: string) {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function watchSelected() {
+    const ids = Array.from(selectedIds).join(',');
+    navigate(`/watch?ids=${ids}`);
+  }
+
+  const allPageSelected = browse.paginatedSessions.length > 0 && browse.paginatedSessions.every((session) => selectedIds.has(session.id));
+
+  function toggleSelectAllPage() {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (allPageSelected) {
+        for (const session of browse.paginatedSessions) {
+          next.delete(session.id);
+        }
+      } else {
+        for (const session of browse.paginatedSessions) {
+          next.add(session.id);
+        }
+      }
+      return next;
+    });
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-gh-text">Sessions</h1>
           <p className="text-gh-muted text-sm">
-            {countLabel}
-            {shownAttentionCount > 0 && (
+            {isSelectionActive
+              ? `${selectedIds.size} selected`
+              : countLabel}
+            {!isSelectionActive && shownAttentionCount > 0 && (
               <span className="text-gh-attention ml-2">
                 · {shownAttentionCount} need{shownAttentionCount !== 1 ? '' : 's'} attention
               </span>
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center border border-gh-border rounded overflow-hidden">
+        {isSelectionActive ? (
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => toggleView('list')}
-              title="List view"
-              aria-pressed={viewMode === 'list'}
-              className={`px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gh-accent/40 ${viewMode === 'list' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
+              onClick={clearSelection}
+              className="rounded-md border border-gh-border bg-gh-bg px-3 py-1.5 text-xs font-medium text-gh-text transition-colors hover:bg-gh-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40"
             >
-              <ListIcon active={viewMode === 'list'} />
+              Clear
             </button>
             <button
               type="button"
-              onClick={() => toggleView('grid')}
-              title="Grid view"
-              aria-pressed={viewMode === 'grid'}
-              className={`border-l border-gh-border px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gh-accent/40 ${viewMode === 'grid' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
+              onClick={watchSelected}
+              className="rounded-md border border-gh-accent/30 bg-gh-accent/10 px-3 py-1.5 text-xs font-medium text-gh-accent transition-colors hover:bg-gh-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40"
             >
-              <GridIcon active={viewMode === 'grid'} />
+              Watch selected
             </button>
           </div>
-          <div className="flex items-center gap-2 text-gh-muted text-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-gh-active" />
-            Auto-refresh 5s
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center border border-gh-border rounded overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleView('list')}
+                title="List view"
+                aria-pressed={viewMode === 'list'}
+                className={`px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gh-accent/40 ${viewMode === 'list' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
+              >
+                <ListIcon active={viewMode === 'list'} />
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleView('grid')}
+                title="Grid view"
+                aria-pressed={viewMode === 'grid'}
+                className={`border-l border-gh-border px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gh-accent/40 ${viewMode === 'grid' ? 'bg-gh-surface text-gh-text' : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'}`}
+              >
+                <GridIcon active={viewMode === 'grid'} />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 text-gh-muted text-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-gh-active" />
+              Auto-refresh 5s
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {activeSessions.length > 0 && (
@@ -274,15 +338,29 @@ export function SessionList() {
               <table className="w-full table-fixed text-sm">
                 <thead>
                   <tr className="border-b border-gh-border bg-gh-surface">
-                    <th className="w-[38%] px-4 py-2 text-left text-xs font-medium text-gh-muted">Session</th>
-                    <th className="w-[37%] px-4 py-2 text-left text-xs font-medium text-gh-muted">Context</th>
+                    <th className="w-10 px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={toggleSelectAllPage}
+                        aria-label="Select all sessions on this page"
+                        className="h-4 w-4 rounded border-gh-border bg-gh-bg text-gh-accent focus:ring-gh-accent/40"
+                      />
+                    </th>
+                    <th className="w-[36%] px-4 py-2 text-left text-xs font-medium text-gh-muted">Session</th>
+                    <th className="w-[36%] px-4 py-2 text-left text-xs font-medium text-gh-muted">Context</th>
                     <th className="w-[21%] px-4 py-2 text-right text-xs font-medium text-gh-muted">Activity</th>
                     <th className="py-2 px-4" />
                   </tr>
                 </thead>
                 <tbody>
                   {browse.paginatedSessions.map((session) => (
-                    <SessionRow key={session.id} session={session} />
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      selected={selectedIds.has(session.id)}
+                      onSelectToggle={() => toggleSelection(session.id)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -290,7 +368,12 @@ export function SessionList() {
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
               {browse.paginatedSessions.map((session) => (
-                <SessionCard key={session.id} session={session} />
+                <SessionCard
+                  key={session.id}
+                  session={session}
+                  selected={selectedIds.has(session.id)}
+                  onSelectToggle={() => toggleSelection(session.id)}
+                />
               ))}
             </div>
           )}
