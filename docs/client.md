@@ -154,6 +154,53 @@ Result content is prefixed `"User selected: "` or `"User responded: "` — strip
 - Detects transitions: `needsAttention false→true` and `isTaskComplete false→true`.
 - Tags include `Date.now()` suffix to bypass browser deduplication.
 
+## Artifact File Browser
+
+The Session Detail view includes a file browser for viewing session artifacts in the `files/`, `checkpoints/`, and `research/` folders.
+
+### Supported File Types
+
+| Type | Extensions | Behavior |
+|------|------------|----------|
+| **Images** | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.bmp`, `.ico` | Inline preview with download option |
+| **Markdown** | `.md`, `.markdown`, `.mdown` | Rendered with `MarkdownRenderer` |
+| **Text** | any other | Displayed as plain text |
+
+### Image Preview
+
+Image files are detected by extension and rendered inline using the `ImagePreview` component:
+
+```tsx
+// Image files show a preview badge in the file list
+<span className="text-gh-accent">image</span>
+
+// Selecting an image displays inline preview
+<ImagePreview
+  sessionId={sessionId}
+  filePath={entry.path}
+  fileName={entry.name}
+  fileSizeBytes={entry.sizeBytes}
+/>
+```
+
+**Features:**
+- **Loading state**: Shows spinner while image loads
+- **Error handling**: Displays error message with retry and download buttons
+- **Responsive**: Images are constrained to container width (`max-width: 100%`)
+- **Download**: Download link available for all images
+
+### API Endpoint
+
+Raw file content is served via:
+
+```
+GET /api/sessions/:sessionId/artifacts/file?path={filePath}
+```
+
+- Returns file with appropriate `Content-Type` header
+- Path traversal attempts are blocked (403 response)
+- Only files within `files/`, `checkpoints/`, `research/` folders are accessible
+
 ## Styling
 
 - All `gh-*` color tokens defined in `tailwind.config.ts`.

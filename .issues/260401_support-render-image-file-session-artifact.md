@@ -1,9 +1,10 @@
 ---
 title: "Support rendering image files as session artifacts in the 'files' folder"
 type: "Feature"
-status: "Proposed"
+status: "Completed"
 author: "Copilot"
 created: "2026-04-01"
+completed: "2026-04-02"
 priority: "Medium"
 ---
 
@@ -25,19 +26,19 @@ Enable viewing image files (e.g., `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) insi
 
 ## Requirements
 
-- [ ] Update the artifact file browser component (likely in `client/src/components/SessionDetail/SessionDetail.tsx`, `SessionMeta.tsx`, `SessionDetail` hooks, or `client/src/components/SessionList/` depending on existing architecture) to detect and categorize image files by extension or MIME type.
-- [ ] Add an `ImagePreview` subcomponent to render selected image artifacts safely with `img` element, proper `alt`, `max-width` constraints, and error fallback.
-- [ ] Add a fallback for unsupported image assets (corrupt file, unsupported format) with a friendly message and download button.
-- [ ] Ensure path safety and security: only render images from permitted artifact paths (`files/` scoped), avoid unescaped filesystem URL injection.
+- [x] Update the artifact file browser component (likely in `client/src/components/SessionDetail/SessionDetail.tsx`, `SessionMeta.tsx`, `SessionDetail` hooks, or `client/src/components/SessionList/` depending on existing architecture) to detect and categorize image files by extension or MIME type.
+- [x] Add an `ImagePreview` subcomponent to render selected image artifacts safely with `img` element, proper `alt`, `max-width` constraints, and error fallback.
+- [x] Add a fallback for unsupported image assets (corrupt file, unsupported format) with a friendly message and download button.
+- [x] Ensure path safety and security: only render images from permitted artifact paths (`files/` scoped), avoid unescaped filesystem URL injection.
 - [ ] Add tests at `client/src/components/SessionDetail/__tests__` or equivalent for new image artifact rendering and selection behavior.
-- [ ] Add documentation note in `docs/client.md` or `docs/session-model.md` describing supported artifact types and behavior in the UI.
+- [x] Add documentation note in `docs/client.md` or `docs/session-model.md` describing supported artifact types and behavior in the UI.
 
 ## Acceptance Criteria
 
-- [ ] In a session with a `files/` image artifact, the UI shows image artifacts as preview-capable items.
-- [ ] Selecting an image artifact displays the image in the artifact viewer panel (embedded, not forcing a file download).
-- [ ] Non-image files continue to render existing behavior and are unaffected.
-- [ ] Error handling for invalid image artifacts provides a clear message and download option.
+- [x] In a session with a `files/` image artifact, the UI shows image artifacts as preview-capable items.
+- [x] Selecting an image artifact displays the image in the artifact viewer panel (embedded, not forcing a file download).
+- [x] Non-image files continue to render existing behavior and are unaffected.
+- [x] Error handling for invalid image artifacts provides a clear message and download option.
 - [ ] Unit/integration tests cover image preview and fallback conditions.
 
 ## Notes
