@@ -37,6 +37,8 @@ import type {
   SessionSummary,
   TodoItem,
 } from '../../api/client.ts';
+import { isImageFile } from '../../utils/fileUtils.ts';
+import { ImagePreview } from './ImagePreview.tsx';
 import { fetchSessionArtifacts, fetchSessionDb } from '../../api/client.ts';
 import { sortTodosLatestFirst } from '../../utils/todoSort.ts';
 
@@ -178,7 +180,24 @@ function collectArtifactFiles(entries: SessionArtifactEntry[]): SessionArtifactE
   });
 }
 
-function renderArtifactContent(entry: SessionArtifactEntry, forceMarkdown = false) {
+function renderArtifactContent(
+  entry: SessionArtifactEntry,
+  sessionId: string,
+  forceMarkdown = false,
+) {
+  // Handle image files
+  if (isImageFile(entry.name)) {
+    return (
+      <ImagePreview
+        sessionId={sessionId}
+        filePath={entry.path}
+        fileName={entry.name}
+        fileSizeBytes={entry.sizeBytes}
+      />
+    );
+  }
+
+  // Handle text files
   const content = entry.content?.trim();
   if (!content) {
     return (
@@ -632,6 +651,7 @@ function ArtifactEntryTree({
 }) {
   const isFolder = entry.kind === 'directory';
   const isSelected = !isFolder && entry.path === selectedPath;
+  const isImage = !isFolder && isImageFile(entry.name);
 
   return (
     <li className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-3 py-2">
@@ -641,7 +661,7 @@ function ArtifactEntryTree({
             isFolder ? 'bg-gh-accent/12 text-gh-accent' : isSelected ? 'bg-gh-active/15 text-gh-active' : 'bg-gh-border/70 text-gh-muted'
           }`}
         >
-          {isFolder ? '▸' : '•'}
+          {isFolder ? '▸' : isImage ? '🖼' : '•'}
         </span>
         <div className="min-w-0 flex-1">
           {isFolder ? (
@@ -665,8 +685,8 @@ function ArtifactEntryTree({
               }`}
             >
               <span className="truncate text-sm font-medium">{entry.name}</span>
-              <span className="rounded-full border border-gh-border bg-gh-surface px-2 py-0.5 text-[11px] text-gh-muted">
-                file
+              <span className={`rounded-full border border-gh-border bg-gh-surface px-2 py-0.5 text-[11px] ${isImage ? 'text-gh-accent' : 'text-gh-muted'}`}>
+                {isImage ? 'image' : 'file'}
               </span>
               <span className="text-[11px] text-gh-muted">
                 {formatBytes(entry.sizeBytes)}
@@ -697,7 +717,7 @@ function ArtifactEntryTree({
   );
 }
 
-function ArtifactGroupPanel({ group }: { group: SessionArtifactGroup }) {
+function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup; sessionId: string }) {
   const files = useMemo(() => collectArtifactFiles(group.entries ?? []), [group.entries]);
   const [selectedPath, setSelectedPath] = useState(files[0]?.path ?? '');
 
@@ -778,7 +798,7 @@ function ArtifactGroupPanel({ group }: { group: SessionArtifactGroup }) {
                   <p className="mt-1 text-[11px] font-mono text-gh-muted">{selectedFile.path}</p>
                 </div>
                 <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4">
-                  {renderArtifactContent(selectedFile, group.path === 'checkpoints')}
+                  {renderArtifactContent(selectedFile, sessionId, group.path === 'checkpoints')}
                 </div>
               </div>
             ) : (
@@ -1961,7 +1981,7 @@ export function SessionDetail() {
                     </div>
                   </div>
                 )}
-                {artifacts && checkpointGroup && <ArtifactGroupPanel group={checkpointGroup} />}
+                {artifacts && checkpointGroup && <ArtifactGroupPanel group={checkpointGroup} sessionId={session.id} />}
                 {artifacts && !checkpointGroup && (
                   <div className="flex-1 overflow-y-auto p-4">
                     <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
@@ -1995,7 +2015,7 @@ export function SessionDetail() {
                     </div>
                   </div>
                 )}
-                {artifacts && researchGroup && <ArtifactGroupPanel group={researchGroup} />}
+                {artifacts && researchGroup && <ArtifactGroupPanel group={researchGroup} sessionId={session.id} />}
                 {artifacts && !researchGroup && (
                   <div className="flex-1 overflow-y-auto p-4">
                     <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
@@ -2029,7 +2049,7 @@ export function SessionDetail() {
                     </div>
                   </div>
                 )}
-                {artifacts && filesGroup && <ArtifactGroupPanel group={filesGroup} />}
+                {artifacts && filesGroup && <ArtifactGroupPanel group={filesGroup} sessionId={session.id} />}
                 {artifacts && !filesGroup && (
                   <div className="flex-1 overflow-y-auto p-4">
                     <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
