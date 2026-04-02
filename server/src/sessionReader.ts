@@ -347,6 +347,27 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
   const descriptions = new Map<string, string>();
   // track read_agent toolCallIds so we can detect their completion via tool.execution_complete
   const readAgentIds = new Set<string>();
+  // track task/task_complete toolCallIds so we can detect their completion via tool.execution_complete
+  const taskToolIds = new Set<string>();
+  // Map agentId (task name) to toolCallId for tracking agent_idle notifications
+  const agentIdToToolCallId = new Map<string, string>();
+  // Track subagent.started events by agentType for pragmatic matching when tool requests are compacted
+  const subagentsByType = new Map<string, string[]>(); // agentType -> toolCallId[] (in order of appearance)
+  // Track agent_idle notifications that couldn't be directly matched (for pragmatic matching)
+  const pendingIdleNotifications: Array<{ agentType: string; description?: string; timestamp: string }> = [];
+
+  // First pass: collect all subagent.started events
+  for (const event of events) {
+    if (event.type === 'subagent.started') {
+      const d = event.data as { toolCallId: string; agentName: string; agentDisplayName: string; sessionId?: string };
+      const agentType = d.agentName; // e.g., 'general-purpose', 'explore', 'coder'
+      if (!subagentsByType.has(agentType)) {
+        subagentsByType.set(agentType, []);
+      }
+      subagentsByType.get(agentType)!.push(d.toolCallId);
+      started.set(d.toolCallId, { agentName: d.agentName, agentDisplayName: d.agentDisplayName, sessionId: d.sessionId });
+    }
+  }
 
   for (const event of events) {
     const isSubEvent = !!(event.data as Record<string, unknown>).parentToolCallId;
@@ -356,16 +377,68 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       const data = event.data as unknown as AssistantMessageData;
       for (const tr of data.toolRequests ?? []) {
         if (tr.name === 'task' || tr.name === 'task_complete') {
-          const args = tr.arguments as { description?: string };
+          const args = tr.arguments as { name?: string; description?: string };
           if (args.description) descriptions.set(tr.toolCallId, args.description);
+          // Track task tools that spawn sub-agents for completion detection via tool.execution_complete
+          // The 'name' argument becomes the agentId in system.notification events
+          if (args.name) {
+            taskToolIds.add(tr.toolCallId);
+            agentIdToToolCallId.set(args.name, tr.toolCallId);
+            // Only add to started if not already added from subagent.started
+            if (!started.has(tr.toolCallId)) {
+              started.set(tr.toolCallId, {
+                agentName: tr.name,
+                agentDisplayName: args.name,
+              });
+            }
+          }
         }
       }
-    } else if (event.type === 'subagent.started') {
-      const d = event.data as { toolCallId: string; agentName: string; agentDisplayName: string; sessionId?: string };
-      started.set(d.toolCallId, { agentName: d.agentName, agentDisplayName: d.agentDisplayName, sessionId: d.sessionId });
     } else if (event.type === 'subagent.completed' || event.type === 'subagent.failed') {
       const d = event.data as { toolCallId: string };
       completed.add(d.toolCallId);
+    } else if (event.type === 'system.notification') {
+      // Task sub-agents emit system.notification with kind.type: 'agent_idle' when they finish
+      const d = event.data as { content?: string; kind?: { type?: string; agentId?: string; agentType?: string; description?: string }; timestamp?: string };
+      if (d.kind?.type === 'agent_idle') {
+        // Try to find the matching toolCallId
+        let toolCallId: string | undefined;
+        
+        if (d.kind.agentId) {
+          toolCallId = agentIdToToolCallId.get(d.kind.agentId);
+        }
+        
+        // If no direct mapping, try to match by description for agents whose tool request was compacted
+        if (!toolCallId && d.kind.description) {
+          for (const [tcId, desc] of descriptions.entries()) {
+            if (desc === d.kind.description) {
+              toolCallId = tcId;
+              break;
+            }
+          }
+        }
+        
+        // Also try to extract agentId from the content string as fallback
+        if (!toolCallId && d.content) {
+          const match = d.content.match(/Agent "([^"]+)"/);
+          if (match) {
+            const extractedAgentId = match[1];
+            toolCallId = agentIdToToolCallId.get(extractedAgentId);
+          }
+        }
+        
+        if (toolCallId) {
+          completed.add(toolCallId);
+        } else if (d.kind.agentType) {
+          // PRAGMATIC FALLBACK: If we couldn't match directly, queue for later matching
+          // This happens when the original tool request was compacted away
+          pendingIdleNotifications.push({
+            agentType: d.kind.agentType,
+            description: d.kind.description,
+            timestamp: (event as RawEvent).timestamp,
+          });
+        }
+      }
     } else if (event.type === 'tool.execution_start') {
       // read_agent calls spawn async agents without subagent.started events
       const d = event.data as { toolCallId: string; toolName: string; arguments: Record<string, unknown> };
@@ -380,9 +453,42 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       }
     } else if (event.type === 'tool.execution_complete') {
       const d = event.data as { toolCallId: string };
-      if (readAgentIds.has(d.toolCallId)) {
+      if (readAgentIds.has(d.toolCallId) || taskToolIds.has(d.toolCallId)) {
         completed.add(d.toolCallId);
       }
+    }
+  }
+
+  // PRAGMATIC MATCHING: For agent_idle notifications that couldn't be directly matched,
+  // match them to the oldest running subagent of the same type. This handles the case
+  // where the original tool request was compacted away, leaving no agentId -> toolCallId mapping.
+  for (const idleNotification of pendingIdleNotifications) {
+    const candidates = subagentsByType.get(idleNotification.agentType) ?? [];
+    // Find the oldest candidate that is started but not completed
+    for (const toolCallId of candidates) {
+      if (started.has(toolCallId) && !completed.has(toolCallId)) {
+        completed.add(toolCallId);
+        break; // Only mark one per notification
+      }
+    }
+  }
+
+  // AGGRESSIVE PRAGMATIC MATCHING: For subagent types where we have fewer agent_idle notifications
+  // than actual subagents, mark remaining unmatched subagents of that type as completed.
+  // This handles explore agents and other types that don't always emit agent_idle notifications.
+  // Count how many agent_idle notifications we had per type
+  const idleCountByType = new Map<string, number>();
+  for (const notif of pendingIdleNotifications) {
+    idleCountByType.set(notif.agentType, (idleCountByType.get(notif.agentType) ?? 0) + 1);
+  }
+  // For each type with idle notifications, if there are still running subagents of that type,
+  // mark them as completed (pragmatic assumption: they're done but didn't emit agent_idle)
+  for (const [agentType, idleCount] of idleCountByType.entries()) {
+    const candidates = subagentsByType.get(agentType) ?? [];
+    const runningCandidates = candidates.filter(tcId => started.has(tcId) && !completed.has(tcId));
+    // Mark remaining running candidates as completed
+    for (const toolCallId of runningCandidates) {
+      completed.add(toolCallId);
     }
   }
 
