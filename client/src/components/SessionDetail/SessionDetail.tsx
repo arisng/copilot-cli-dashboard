@@ -447,7 +447,7 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
                   >
                     <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
                     <span className="text-sm text-gh-text font-medium flex-1 leading-snug">{todo.title}</span>
-                    {todo.dependsOn.length > 0 && (
+                    {(todo.dependsOn ?? []).length > 0 && (
                       <span className="text-xs text-gh-muted shrink-0">{todo.dependsOn.length} dep{todo.dependsOn.length !== 1 ? 's' : ''}</span>
                     )}
                     <svg

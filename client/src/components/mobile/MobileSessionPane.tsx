@@ -329,8 +329,8 @@ function MobileMessageCard({ message }: { message: ParsedMessage }) {
 
 function TodoCard({ todo }: { todo: TodoItem }) {
   const statusConfig = TODO_STATUS_CONFIG[todo.status] ?? TODO_STATUS_CONFIG.pending;
-  const descriptionPreview = truncateMobileText(todo.description, 150);
-  const hasExpandableContent = todo.description.trim().length > descriptionPreview.length || todo.dependsOn.length > 0;
+  const descriptionPreview = truncateMobileText(todo.description ?? '', 150);
+  const hasExpandableContent = (todo.description ?? '').trim().length > descriptionPreview.length || (todo.dependsOn ?? []).length > 0;
   const cardBody = (
     <div className="flex items-start gap-3">
       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusConfig.dot}`} />
@@ -351,10 +351,10 @@ function TodoCard({ todo }: { todo: TodoItem }) {
             Updated
             <RelativeTime timestamp={todo.updatedAt} className="text-[11px] text-gh-muted" />
           </span>
-          {todo.dependsOn.length > 0 ? (
+          {(todo.dependsOn ?? []).length > 0 ? (
             <>
               <span className="text-gh-border">·</span>
-              <span>{pluralize(todo.dependsOn.length, 'dependency', 'dependencies')}</span>
+              <span>{pluralize((todo.dependsOn ?? []).length, 'dependency', 'dependencies')}</span>
             </>
           ) : null}
         </div>
@@ -394,11 +394,11 @@ function TodoCard({ todo }: { todo: TodoItem }) {
           </div>
         ) : null}
 
-        {todo.dependsOn.length > 0 ? (
+        {(todo.dependsOn ?? []).length > 0 ? (
           <div>
             <p className="text-[11px] uppercase tracking-wide text-gh-muted">Dependencies</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {todo.dependsOn.map((dependency) => (
+              {(todo.dependsOn ?? []).map((dependency) => (
                 <span
                   key={`${todo.id}-${dependency}`}
                   className="rounded-full border border-gh-border bg-gh-surface px-2 py-1 text-[11px] font-mono text-gh-muted"
@@ -796,7 +796,7 @@ function ActivityPanel({
 }
 
 function WorkPanel({ session, todos }: { session: SessionDetail; todos: TodoItem[] }) {
-  const hasPlan = session.isPlanPending || Boolean(session.planContent);
+  const hasPlan = session.isPlanPending || Boolean(session.planContent ?? '');
   const sortedTodos = sortTodosLatestFirst(todos);
   const todoGroups = [
     { label: 'In progress', items: sortedTodos.filter((todo) => todo.status === 'in_progress'), accent: 'text-gh-accent' },
@@ -833,12 +833,12 @@ function WorkPanel({ session, todos }: { session: SessionDetail; todos: TodoItem
                       {session.isPlanPending ? 'Waiting for approval' : 'Captured plan'}
                     </span>
                     <span className="text-[11px] text-gh-muted">
-                      {session.planContent ? `${session.planContent.length} characters` : 'No body captured yet'}
+                      {(session.planContent ?? '').length > 0 ? `${(session.planContent ?? '').length} characters` : 'No body captured yet'}
                     </span>
                   </div>
                   <p className="mt-3 text-sm leading-relaxed text-gh-text">
-                    {session.planContent
-                      ? truncateMobileText(session.planContent, 180)
+                    {(session.planContent ?? '').length > 0
+                      ? truncateMobileText(session.planContent ?? '', 180)
                       : 'The plan header is present, but the detailed body has not been captured yet.'}
                   </p>
                 </div>

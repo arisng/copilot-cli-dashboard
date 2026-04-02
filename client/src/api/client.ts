@@ -78,6 +78,19 @@ export interface TodoItem {
   dependsOn: string[];
 }
 
+function normalizeTodo(
+  todo: Omit<TodoItem, 'description' | 'dependsOn'> & {
+    description: string | null;
+    dependsOn: string[] | null;
+  }
+): TodoItem {
+  return {
+    ...todo,
+    description: todo.description ?? '',
+    dependsOn: todo.dependsOn ?? [],
+  };
+}
+
 export interface SessionArtifactEntry {
   name: string;
   path: string;
@@ -163,7 +176,11 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
 }
 
 export async function fetchSession(id: string): Promise<SessionDetail> {
-  return fetchJson<SessionDetail>(`/api/sessions/${id}`);
+  const data = await fetchJson<SessionDetail>(`/api/sessions/${id}`);
+  return {
+    ...data,
+    todos: data.todos?.map(normalizeTodo),
+  };
 }
 
 export async function fetchSessionArtifacts(id: string): Promise<SessionArtifacts> {
