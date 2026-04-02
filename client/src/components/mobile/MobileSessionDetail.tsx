@@ -17,6 +17,7 @@ import {
   titleCaseMobileLabel,
   truncateMobileText,
 } from './mobileSessionViewModels.ts';
+import { sortTodosLatestFirst } from '../../utils/todoSort.ts';
 
 const MOBILE_VISIBLE_MESSAGES = 10;
 
@@ -798,11 +799,12 @@ function ActivityPanel({
 
 function WorkPanel({ session, todos }: { session: SessionDetail; todos: TodoItem[] }) {
   const hasPlan = session.isPlanPending || Boolean(session.planContent);
+  const sortedTodos = sortTodosLatestFirst(todos);
   const todoGroups = [
-    { label: 'In progress', items: todos.filter((todo) => todo.status === 'in_progress'), accent: 'text-gh-accent' },
-    { label: 'Blocked', items: todos.filter((todo) => todo.status === 'blocked'), accent: 'text-gh-attention' },
-    { label: 'Pending', items: todos.filter((todo) => todo.status === 'pending'), accent: 'text-gh-muted' },
-    { label: 'Done', items: todos.filter((todo) => isDoneStatus(todo.status)), accent: 'text-gh-muted' },
+    { label: 'In progress', items: sortedTodos.filter((todo) => todo.status === 'in_progress'), accent: 'text-gh-accent' },
+    { label: 'Blocked', items: sortedTodos.filter((todo) => todo.status === 'blocked'), accent: 'text-gh-attention' },
+    { label: 'Pending', items: sortedTodos.filter((todo) => todo.status === 'pending'), accent: 'text-gh-muted' },
+    { label: 'Done', items: sortedTodos.filter((todo) => isDoneStatus(todo.status)), accent: 'text-gh-muted' },
   ].filter((group) => group.items.length > 0);
 
   return (
