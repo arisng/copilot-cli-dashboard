@@ -15,7 +15,7 @@ This index links Diátaxis-organized documentation for the workspace.
 
 - [How to Access the Dashboard From Your Phone](how-to/dashboard/access-from-your-phone.md)
 - [How to Run the Production Server](how-to/dashboard/run-the-production-server.md)
-- [How to Show or Hide Unknown Context Sessions](how-to/dashboard/show-unknown-context-sessions.md)
+- [Show Unknown Context Sessions](how-to/dashboard/show-unknown-context-sessions.md)
 
 
 ## Reference
@@ -23,7 +23,7 @@ This index links Diátaxis-organized documentation for the workspace.
 ### Client
 
 - [Client Architecture Reference](reference/client/client-architecture.md)
-- [Session Filtering Reference](reference/client/session-filtering.md)
+- [Session Filtering](reference/client/session-filtering.md)
 
 ### Operations
 
@@ -42,8 +42,9 @@ This index links Diátaxis-organized documentation for the workspace.
 
 ### Dashboard
 
-- [About the Dashboard Architecture](explanation/dashboard/how-it-works.md)
 - [About the Desktop Session UX Refresh](explanation/dashboard/desktop-session-ux.md)
-- [About the Session Overview Column Design](explanation/dashboard/session-overview-column-design.md)
+- [About the Dashboard Architecture](explanation/dashboard/how-it-works.md)
+- [Session Overview Column Design](explanation/dashboard/session-overview-column-design.md)
+- [Todo Sorting Design](explanation/dashboard/todo-sorting-design.md)
 
 
