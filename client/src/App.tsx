@@ -2,6 +2,7 @@ import { Outlet, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/shared/Layout.tsx';
 import { SessionList } from './components/SessionList/SessionList.tsx';
 import { SessionDetail } from './components/SessionDetail/SessionDetail.tsx';
+import { SessionWatchMode } from './components/SessionWatchMode/SessionWatchMode.tsx';
 import { MobileLayout } from './components/mobile/MobileLayout.tsx';
 import { MobileSessionList } from './components/mobile/MobileSessionList.tsx';
 import { MobileSessionDetail } from './components/mobile/MobileSessionDetail.tsx';
@@ -28,6 +29,7 @@ export default function App() {
       <Route element={<DesktopRouteLayout />}>
         <Route path="/" element={<SessionList />} />
         <Route path="/sessions/:id" element={<SessionDetail />} />
+        <Route path="/watch" element={<SessionWatchMode />} />
       </Route>
 
       <Route path="/m" element={<MobileRouteLayout />}>
