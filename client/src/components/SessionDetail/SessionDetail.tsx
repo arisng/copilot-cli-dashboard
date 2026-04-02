@@ -38,6 +38,7 @@ import type {
   TodoItem,
 } from '../../api/client.ts';
 import { fetchSessionArtifacts, fetchSessionDb } from '../../api/client.ts';
+import { sortTodosLatestFirst } from '../../utils/todoSort.ts';
 
 // ── Shared markdown renderer imported from ../shared/MarkdownRenderer ─────
 
@@ -393,10 +394,11 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
   const toggle = (id: string) =>
     setExpanded((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  const pending   = todos.filter((t) => t.status === 'pending');
-  const active    = todos.filter((t) => t.status === 'in_progress');
-  const blocked   = todos.filter((t) => t.status === 'blocked');
-  const done      = todos.filter((t) => isDone(t.status));
+  const sortedTodos = sortTodosLatestFirst(todos);
+  const pending   = sortedTodos.filter((t) => t.status === 'pending');
+  const active    = sortedTodos.filter((t) => t.status === 'in_progress');
+  const blocked   = sortedTodos.filter((t) => t.status === 'blocked');
+  const done      = sortedTodos.filter((t) => isDone(t.status));
   const groups = [
     { label: 'In progress', items: active,  accent: 'text-gh-accent' },
     { label: 'Blocked',     items: blocked, accent: 'text-gh-attention' },
