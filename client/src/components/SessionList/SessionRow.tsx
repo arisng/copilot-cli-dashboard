@@ -8,6 +8,8 @@ import { SessionStatusBadge } from './SessionStatusBadge.tsx';
 
 interface Props {
   session: SessionSummary;
+  selected?: boolean;
+  onSelectToggle?: () => void;
 }
 
 function CopyBranch({ branch }: { branch: string }) {
@@ -64,7 +66,7 @@ function MetaPill({
 function SubAgentRow({ agent }: { agent: ActiveSubAgent }) {
   return (
     <tr className="border-b border-gh-border/40 bg-gh-canvas/30">
-      <td className="py-2 px-4 pl-10" colSpan={4}>
+      <td className="py-2 px-4 pl-10" colSpan={5}>
         <div className="flex items-center gap-2">
           {/* Tree connector */}
           <span className="text-gh-border text-xs select-none">└</span>
@@ -101,7 +103,7 @@ function SubAgentRow({ agent }: { agent: ActiveSubAgent }) {
   );
 }
 
-export function SessionRow({ session }: Props) {
+export function SessionRow({ session, selected = false, onSelectToggle }: Props) {
   const navigate = useNavigate();
   const hasSubAgents = session.activeSubAgents.length > 0;
   const [expanded, setExpanded] = useState(false);
@@ -113,7 +115,7 @@ export function SessionRow({ session }: Props) {
 
   function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>) {
     const target = event.target as HTMLElement;
-    if (target.closest('button')) {
+    if (target.closest('button') || target.closest('input')) {
       return;
     }
 
@@ -138,6 +140,19 @@ export function SessionRow({ session }: Props) {
           ${session.needsAttention ? 'border-l-2 border-l-gh-attention bg-gh-attention/5' : ''}
         `}
       >
+        <td className="px-2 py-2.5 align-middle">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onSelectToggle?.();
+            }}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select session ${session.title}`}
+            className="h-4 w-4 rounded border-gh-border bg-gh-bg text-gh-accent focus:ring-gh-accent/40"
+          />
+        </td>
         <td className="px-4 py-2.5 align-top">
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
