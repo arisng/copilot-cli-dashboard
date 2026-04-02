@@ -69,6 +69,84 @@ type SqliteDatabase = ReturnType<typeof Database>;
 let sessionRootsCache: SessionRootsCache | null = null;
 const sessionSummaryCache = new Map<string, CachedSessionSummary>();
 const SESSION_ARTIFACT_SECTIONS: SessionArtifactSectionName[] = ['checkpoints', 'research', 'files'];
+
+const ALLOWED_ARTIFACT_PREFIXES = ['files/', 'checkpoints/', 'research/', 'plan.md'];
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+
+export function isImageFile(fileName: string): boolean {
+  const lowerName = fileName.toLowerCase();
+  return IMAGE_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+}
+
+export function getMimeType(fileName: string): string {
+  const lowerName = fileName.toLowerCase();
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg';
+  if (lowerName.endsWith('.gif')) return 'image/gif';
+  if (lowerName.endsWith('.webp')) return 'image/webp';
+  if (lowerName.endsWith('.svg')) return 'image/svg+xml';
+  if (lowerName.endsWith('.bmp')) return 'image/bmp';
+  if (lowerName.endsWith('.ico')) return 'image/x-icon';
+  return 'application/octet-stream';
+}
+
+function isPathWithinAllowedArtifacts(filePath: string): boolean {
+  // Normalize the path and check for traversal attempts
+  const normalized = path.normalize(filePath).replace(/\\/g, '/');
+  
+  // Reject paths with .. components
+  if (normalized.includes('..')) {
+    return false;
+  }
+  
+  // Must start with one of the allowed prefixes
+  return ALLOWED_ARTIFACT_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+export interface ArtifactFileResult {
+  filePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  content: Buffer;
+}
+
+export function readSessionArtifactFile(sessionId: string, relativePath: string): ArtifactFileResult | null {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) return null;
+
+  // Validate the path is within allowed artifact directories
+  if (!isPathWithinAllowedArtifacts(relativePath)) {
+    throw new Error('Path outside allowed artifact directories');
+  }
+
+  const fullPath = path.join(sessionDir, relativePath);
+  
+  // Extra safety: ensure resolved path is within session directory
+  const resolvedPath = path.resolve(fullPath);
+  const resolvedSessionDir = path.resolve(sessionDir);
+  if (!resolvedPath.startsWith(resolvedSessionDir)) {
+    throw new Error('Path traversal detected');
+  }
+
+  try {
+    const stat = fs.statSync(fullPath);
+    if (!stat.isFile()) {
+      return null;
+    }
+
+    const content = fs.readFileSync(fullPath);
+    const fileName = path.basename(fullPath);
+    
+    return {
+      filePath: relativePath,
+      mimeType: getMimeType(fileName),
+      sizeBytes: stat.size,
+      content,
+    };
+  } catch {
+    return null;
+  }
+}
 const SESSION_DB_PREVIEW_LIMIT = 100;
 
 export class SessionDbInspectionError extends Error {

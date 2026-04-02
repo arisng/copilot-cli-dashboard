@@ -4,6 +4,7 @@ import {
   listAllSessions,
   parseSessionDir,
   readSessionArtifacts,
+  readSessionArtifactFile,
   SessionDbInspectionError,
 } from './sessionReader.js';
 
@@ -41,6 +42,41 @@ router.get('/sessions/:sessionId/artifacts', (req, res) => {
   }
 
   res.json(artifacts);
+});
+
+router.get('/sessions/:sessionId/artifacts/file', (req, res) => {
+  const { sessionId } = req.params;
+  const filePath = readStringQueryParam(req.query.path);
+
+  if (!filePath) {
+    res.status(400).json({
+      error: 'Missing path parameter',
+      details: 'The "path" query parameter is required.',
+    });
+    return;
+  }
+
+  try {
+    const result = readSessionArtifactFile(sessionId, filePath);
+
+    if (!result) {
+      res.status(404).json({
+        error: 'File not found',
+        details: `The file "${filePath}" was not found in session "${sessionId}".`,
+      });
+      return;
+    }
+
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader('Content-Length', result.sizeBytes);
+    res.send(result.content);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Access denied';
+    res.status(403).json({
+      error: 'Access denied',
+      details: message,
+    });
+  }
 });
 
 router.get('/sessions/:sessionId/session-db', (req, res) => {
