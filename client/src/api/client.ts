@@ -6,6 +6,7 @@ export interface MessagePreview {
 
 export interface ActiveSubAgent {
   toolCallId: string;
+  agentId: string; // The unique agent identifier (e.g., "audit-modules")
   agentName: string;
   agentDisplayName: string;
   description?: string;
