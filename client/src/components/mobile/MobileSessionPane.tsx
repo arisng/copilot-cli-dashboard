@@ -827,7 +827,7 @@ function WorkPanel({ session, todos }: { session: SessionDetail; todos: TodoItem
               ) : null}
 
               {session.planContent ? (
-                <MarkdownRenderer content={session.planContent} variant="mobile" />
+                <MarkdownRenderer content={session.planContent} variant="mobile" collapsible />
               ) : (
                 <p className="text-sm leading-relaxed text-gh-muted">
                   Plan content has not been captured yet. The desktop view may still have more context.
