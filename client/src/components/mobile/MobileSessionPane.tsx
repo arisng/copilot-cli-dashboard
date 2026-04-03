@@ -183,41 +183,6 @@ function MobileSectionCard({
   );
 }
 
-function MobileTabBar({
-  tabs,
-  activeId,
-  onChange,
-}: {
-  tabs: DetailTab[];
-  activeId: DetailSectionId;
-  onChange: (id: DetailSectionId) => void;
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex w-max min-w-full gap-2 rounded-2xl border border-gh-border bg-gh-surface/80 p-1">
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeId;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onChange(tab.id)}
-              className={`min-w-[84px] rounded-xl px-3 py-2.5 text-left transition-colors ${
-                isActive
-                  ? 'bg-gh-bg text-gh-text shadow-sm'
-                  : 'text-gh-muted hover:bg-gh-bg/70 hover:text-gh-text'
-              }`}
-            >
-              <span className="block text-xs font-semibold">{tab.label}</span>
-              {tab.badge ? <span className="mt-1 block text-[11px] text-gh-muted">{tab.badge}</span> : null}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function ToolStatusPill({ tool }: { tool: ToolRequest }) {
   const toneClass = tool.error
     ? 'border-gh-attention/30 bg-gh-attention/10 text-gh-attention'
@@ -992,6 +957,115 @@ function AgentsPanel({
   );
 }
 
+interface StickySummaryBarProps {
+  session: SessionDetail;
+  activeSection: DetailSectionId;
+  onSectionChange: (section: DetailSectionId) => void;
+  showBackLinks?: boolean;
+}
+
+function StickySummaryBar({ session, activeSection, onSectionChange, showBackLinks }: StickySummaryBarProps) {
+  const state = getMobileSessionState(session);
+  const projectName = getProjectName(session.projectPath);
+  const todos = session.todos ?? [];
+  const activeAgents = session.activeSubAgents.filter((agent) => !agent.isCompleted).length;
+  const completedAgents = session.activeSubAgents.length - activeAgents;
+
+  const workSurfaceCount = (session.isPlanPending || session.planContent ? 1 : 0) + todos.length;
+
+  const getStateAccentColor = () => {
+    if (session.needsAttention) return 'bg-gh-attention';
+    if (session.isWorking) return 'bg-gh-active';
+    if (session.isTaskComplete) return 'bg-emerald-400';
+    if (session.isAborted) return 'bg-red-400';
+    return 'bg-gh-accent';
+  };
+
+  return (
+    <div className="sticky top-0 z-20 -mx-3 border-b border-gh-border/80 bg-gh-bg/98 px-3 py-3 backdrop-blur">
+      {/* Primary row: Status + Title + Actions */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {/* Compact status line */}
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${getStateAccentColor()} ${session.isWorking ? 'animate-pulse' : ''}`} />
+            <span className={`text-[11px] font-medium ${state.className.split(' ').pop()}`}>
+              {state.label}
+            </span>
+            {session.isPlanPending && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-gh-attention/30 bg-gh-attention/10 px-1.5 py-0.5 text-[10px] font-medium text-gh-attention">
+                <span className="h-1 w-1 rounded-full bg-gh-attention" />
+                Plan
+              </span>
+            )}
+            {activeAgents > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-gh-active/30 bg-gh-active/10 px-1.5 py-0.5 text-[10px] font-medium text-gh-active">
+                <span className="h-1 w-1 rounded-full bg-gh-active animate-pulse" />
+                {activeAgents}
+              </span>
+            )}
+            {todos.filter((t) => t.status === 'in_progress').length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-gh-accent/30 bg-gh-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-gh-accent">
+                {todos.filter((t) => t.status === 'in_progress').length} todo
+              </span>
+            )}
+          </div>
+
+          {/* Session title */}
+          <h2 className="mt-1.5 text-base font-semibold leading-tight text-gh-text line-clamp-1">
+            {session.title}
+          </h2>
+
+          {/* Context line */}
+          <p className="mt-0.5 text-xs text-gh-muted line-clamp-1">
+            {projectName}
+            {session.gitBranch ? <span> · <span className="text-gh-accent">{session.gitBranch}</span></span> : null}
+          </p>
+        </div>
+
+        {showBackLinks && (
+          <Link
+            to="/m"
+            className="shrink-0 rounded-lg border border-gh-border bg-gh-surface px-2.5 py-1.5 text-[11px] font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+          >
+            Back
+          </Link>
+        )}
+      </div>
+
+      {/* Sticky tab bar */}
+      <div className="mt-3 -mx-3 px-3">
+        <div className="flex gap-1 overflow-x-auto pb-1">
+          {[
+            { id: 'overview' as const, label: 'Overview' },
+            { id: 'activity' as const, label: 'Activity', count: session.messages.length },
+            { id: 'work' as const, label: 'Work', count: workSurfaceCount },
+            { id: 'agents' as const, label: 'Agents', count: session.activeSubAgents.length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onSectionChange(tab.id)}
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                activeSection === tab.id
+                  ? 'bg-gh-accent text-white'
+                  : 'border border-gh-border bg-gh-surface/70 text-gh-muted hover:bg-gh-surface hover:text-gh-text'
+              }`}
+            >
+              {tab.label}
+              {tab.count ? (
+                <span className={`ml-1.5 ${activeSection === tab.id ? 'text-white/70' : 'text-gh-muted'}`}>
+                  {tab.count}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MobileSessionPaneInnerProps {
   session: SessionDetail;
   showBackLinks?: boolean;
@@ -1049,25 +1123,11 @@ function MobileSessionPaneInner({ session, showBackLinks = false, error }: Mobil
     }
   }, [activeStreamId, streams]);
 
-  const state = getMobileSessionState(session);
   const projectName = getProjectName(session.projectPath);
   const todos = session.todos ?? [];
   const activeAgents = session.activeSubAgents.filter((agent) => !agent.isCompleted).length;
   const completedAgents = session.activeSubAgents.length - activeAgents;
   const callout = getSessionCallout(session, todos.length, activeAgents, completedAgents);
-  const detailMetrics = [
-    { label: 'Last activity', value: <RelativeTime timestamp={session.lastActivityAt} className="text-sm text-gh-text" /> },
-    { label: 'Duration', value: formatDuration(session.durationMs) },
-    { label: 'Messages', value: session.messages.length },
-    { label: 'Sub-agents', value: session.activeSubAgents.length },
-  ];
-  const workSurfaceCount = (session.isPlanPending || session.planContent ? 1 : 0) + todos.length;
-  const tabs: DetailTab[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'activity', label: 'Activity', badge: pluralize(session.messages.length, 'message') },
-    { id: 'work', label: 'Work', badge: workSurfaceCount > 0 ? `${workSurfaceCount} items` : undefined },
-    { id: 'agents', label: 'Agents', badge: session.activeSubAgents.length > 0 ? `${session.activeSubAgents.length} threads` : undefined },
-  ];
 
   const handleOpenThread = (streamId: string) => {
     setActiveStreamId(streamId);
@@ -1075,101 +1135,91 @@ function MobileSessionPaneInner({ session, showBackLinks = false, error }: Mobil
   };
 
   return (
-    <section className="space-y-4 pb-6">
-      <div className="rounded-2xl border border-gh-border bg-gradient-to-br from-gh-surface to-gh-bg p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${state.className}`}>
-                {state.label}
-              </span>
-              <ModeBadge mode={session.currentMode} />
-              {session.isPlanPending ? (
-                <span className="inline-flex rounded-full border border-gh-attention/30 bg-gh-attention/10 px-2.5 py-1 text-[11px] font-medium text-gh-attention">
-                  Plan review
+    <section className="relative pb-6">
+      {/* Sticky summary bar */}
+      <StickySummaryBar
+        session={session}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+        showBackLinks={showBackLinks}
+      />
+
+      {/* Content area */}
+      <div className="mt-4 space-y-4">
+        {/* Header card with session details */}
+        <div className="rounded-2xl border border-gh-border bg-gradient-to-br from-gh-surface to-gh-bg p-4 shadow-sm">
+          <div className={`rounded-2xl border p-3 ${callout.toneClass}`}>
+            <p className="text-[11px] uppercase tracking-[0.22em] opacity-80">Now</p>
+            <p className="mt-2 text-sm font-semibold text-gh-text">{callout.title}</p>
+            <p className="mt-1 text-sm leading-relaxed text-gh-muted">{callout.description}</p>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {todos.length > 0 ? (
+                <span className="rounded-full border border-gh-border/70 bg-gh-bg/70 px-2.5 py-1 text-[11px] text-gh-text">
+                  {pluralize(todos.length, 'todo')}
+                </span>
+              ) : null}
+              {activeAgents > 0 ? (
+                <span className="rounded-full border border-gh-active/30 bg-gh-active/10 px-2.5 py-1 text-[11px] text-gh-active">
+                  {pluralize(activeAgents, 'active sub-agent', 'active sub-agents')}
+                </span>
+              ) : null}
+              {completedAgents > 0 ? (
+                <span className="rounded-full border border-gh-border bg-gh-bg px-2.5 py-1 text-[11px] text-gh-muted">
+                  {pluralize(completedAgents, 'completed sub-agent', 'completed sub-agents')}
                 </span>
               ) : null}
             </div>
-
-            <h2 className="mt-3 text-lg font-semibold leading-snug text-gh-text">{session.title}</h2>
-            <p className="mt-2 text-sm text-gh-muted">
-              {projectName}
-              {session.gitBranch ? <span> · {session.gitBranch}</span> : null}
-            </p>
           </div>
 
-          <RelativeTime timestamp={session.lastActivityAt} className="shrink-0 text-xs text-gh-muted" />
-        </div>
-
-        <div className={`mt-4 rounded-2xl border p-3 ${callout.toneClass}`}>
-          <p className="text-[11px] uppercase tracking-[0.22em] opacity-80">Now</p>
-          <p className="mt-2 text-sm font-semibold text-gh-text">{callout.title}</p>
-          <p className="mt-1 text-sm leading-relaxed text-gh-muted">{callout.description}</p>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {todos.length > 0 ? (
-              <span className="rounded-full border border-gh-border/70 bg-gh-bg/70 px-2.5 py-1 text-[11px] text-gh-text">
-                {pluralize(todos.length, 'todo')}
-              </span>
-            ) : null}
-            {activeAgents > 0 ? (
-              <span className="rounded-full border border-gh-active/30 bg-gh-active/10 px-2.5 py-1 text-[11px] text-gh-active">
-                {pluralize(activeAgents, 'active sub-agent', 'active sub-agents')}
-              </span>
-            ) : null}
-            {completedAgents > 0 ? (
-              <span className="rounded-full border border-gh-border bg-gh-bg px-2.5 py-1 text-[11px] text-gh-muted">
-                {pluralize(completedAgents, 'completed sub-agent', 'completed sub-agents')}
-              </span>
-            ) : null}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <MobileInfoCard
+              label="Last activity"
+              value={<RelativeTime timestamp={session.lastActivityAt} className="text-sm text-gh-text" />}
+            />
+            <MobileInfoCard label="Duration" value={formatDuration(session.durationMs)} />
+            <MobileInfoCard label="Messages" value={session.messages.length} />
+            <MobileInfoCard label="Sub-agents" value={session.activeSubAgents.length} />
           </div>
+
+          {showBackLinks ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                to="/m"
+                className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+              >
+                Back to sessions
+              </Link>
+              <Link
+                to={`/sessions/${session.id}`}
+                className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+              >
+                Open desktop detail
+              </Link>
+            </div>
+          ) : null}
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {detailMetrics.map((metric) => (
-            <MobileInfoCard key={metric.label} label={metric.label} value={metric.value} />
-          ))}
-        </div>
-
-        {showBackLinks ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              to="/m"
-              className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
-            >
-              Back to sessions
-            </Link>
-            <Link
-              to={`/sessions/${session.id}`}
-              className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
-            >
-              Open desktop detail
-            </Link>
+        {error ? (
+          <div className="rounded-2xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+            Live updates are temporarily failing: {error}
           </div>
         ) : null}
+
+        {activeSection === 'overview' ? (
+          <OverviewPanel session={session} projectName={projectName} todos={todos} onNavigate={setActiveSection} />
+        ) : null}
+        {activeSection === 'activity' ? (
+          <ActivityPanel
+            session={session}
+            streams={streams}
+            activeStreamId={activeStreamId}
+            onStreamChange={setActiveStreamId}
+          />
+        ) : null}
+        {activeSection === 'work' ? <WorkPanel session={session} todos={todos} /> : null}
+        {activeSection === 'agents' ? <AgentsPanel session={session} onOpenThread={handleOpenThread} /> : null}
       </div>
-
-      {error ? (
-        <div className="rounded-2xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
-          Live updates are temporarily failing: {error}
-        </div>
-      ) : null}
-
-      <MobileTabBar tabs={tabs} activeId={activeSection} onChange={setActiveSection} />
-
-      {activeSection === 'overview' ? (
-        <OverviewPanel session={session} projectName={projectName} todos={todos} onNavigate={setActiveSection} />
-      ) : null}
-      {activeSection === 'activity' ? (
-        <ActivityPanel
-          session={session}
-          streams={streams}
-          activeStreamId={activeStreamId}
-          onStreamChange={setActiveStreamId}
-        />
-      ) : null}
-      {activeSection === 'work' ? <WorkPanel session={session} todos={todos} /> : null}
-      {activeSection === 'agents' ? <AgentsPanel session={session} onOpenThread={handleOpenThread} /> : null}
     </section>
   );
 }
