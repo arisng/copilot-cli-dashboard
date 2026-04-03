@@ -184,6 +184,7 @@ function renderArtifactContent(
   entry: SessionArtifactEntry,
   sessionId: string,
   forceMarkdown = false,
+  collapsible = false,
 ) {
   // Handle image files
   if (isImageFile(entry.name)) {
@@ -208,11 +209,11 @@ function renderArtifactContent(
   }
 
   if (forceMarkdown || /\.(md|markdown|mdown|mkdn|mkd)$/i.test(entry.name)) {
-    return <MarkdownRenderer content={content} variant="desktop" />;
+    return <MarkdownRenderer content={content} variant="desktop" collapsible={collapsible} />;
   }
 
   // For non-markdown files, still use MarkdownRenderer but with plain text handling
-  return <MarkdownRenderer content={content} variant="desktop" />;
+  return <MarkdownRenderer content={content} variant="desktop" collapsible={collapsible} />;
 }
 
 function buildTodoItemsFromDb(
@@ -383,7 +384,7 @@ function PlanView({ content, isPending }: { content: string; isPending: boolean 
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-6">
-        <MarkdownRenderer content={content} variant="desktop" />
+        <MarkdownRenderer content={content} variant="desktop" collapsible />
       </div>
     </div>
   );
@@ -798,7 +799,7 @@ function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup;
                   <p className="mt-1 text-[11px] font-mono text-gh-muted">{selectedFile.path}</p>
                 </div>
                 <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4">
-                  {renderArtifactContent(selectedFile, sessionId, group.path === 'checkpoints')}
+                  {renderArtifactContent(selectedFile, sessionId, group.path === 'checkpoints', true)}
                 </div>
               </div>
             ) : (
