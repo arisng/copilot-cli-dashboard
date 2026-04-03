@@ -970,6 +970,9 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
   const todos = session.todos ?? [];
   const activeAgents = session.activeSubAgents.filter((agent) => !agent.isCompleted).length;
   const completedAgents = session.activeSubAgents.length - activeAgents;
+  const blockedTodos = todos.filter((t) => t.status === 'blocked').length;
+  const inProgressTodos = todos.filter((t) => t.status === 'in_progress').length;
+  const doneTodos = todos.filter((t) => t.status === 'done' || t.status === 'completed').length;
 
   const workSurfaceCount = (session.isPlanPending || session.planContent ? 1 : 0) + todos.length;
 
@@ -981,32 +984,37 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
     return 'bg-gh-accent';
   };
 
+  const getStateBgColor = () => {
+    if (session.needsAttention) return 'bg-gh-attention/10 border-gh-attention/30';
+    if (session.isWorking) return 'bg-gh-active/10 border-gh-active/30';
+    if (session.isTaskComplete) return 'bg-emerald-400/10 border-emerald-400/30';
+    if (session.isAborted) return 'bg-red-400/10 border-red-400/30';
+    return 'bg-gh-surface border-gh-border';
+  };
+
+  // Format duration compactly
+  const formatCompactDuration = (ms: number): string => {
+    const minutes = Math.floor(ms / 60000);
+    const hours = Math.floor(minutes / 60);
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    return `${minutes}m`;
+  };
+
   return (
-    <div className="sticky top-0 z-20 -mx-3 border-b border-gh-border/80 bg-gh-bg/98 px-3 py-3 backdrop-blur">
+    <div className="sticky top-0 z-20 -mx-3 border-b border-gh-border bg-gh-surface px-3 py-3">
       {/* Primary row: Status + Title + Actions */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          {/* Compact status line */}
+          {/* Compact status line with live indicator */}
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${getStateAccentColor()} ${session.isWorking ? 'animate-pulse' : ''}`} />
-            <span className={`text-[11px] font-medium ${state.className.split(' ').pop()}`}>
+            <span className={`text-[11px] font-semibold uppercase tracking-wider ${state.className.split(' ').pop()}`}>
               {state.label}
             </span>
-            {session.isPlanPending && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-gh-attention/30 bg-gh-attention/10 px-1.5 py-0.5 text-[10px] font-medium text-gh-attention">
-                <span className="h-1 w-1 rounded-full bg-gh-attention" />
-                Plan
-              </span>
-            )}
-            {activeAgents > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-gh-active/30 bg-gh-active/10 px-1.5 py-0.5 text-[10px] font-medium text-gh-active">
+            {session.isOpen && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-gh-muted">
                 <span className="h-1 w-1 rounded-full bg-gh-active animate-pulse" />
-                {activeAgents}
-              </span>
-            )}
-            {todos.filter((t) => t.status === 'in_progress').length > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-gh-accent/30 bg-gh-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-gh-accent">
-                {todos.filter((t) => t.status === 'in_progress').length} todo
+                Live
               </span>
             )}
           </div>
@@ -1016,25 +1024,81 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
             {session.title}
           </h2>
 
-          {/* Context line */}
+          {/* Context line with more info */}
           <p className="mt-0.5 text-xs text-gh-muted line-clamp-1">
             {projectName}
             {session.gitBranch ? <span> · <span className="text-gh-accent">{session.gitBranch}</span></span> : null}
+            {session.model ? <span> · <span className="text-gh-muted">{session.model}</span></span> : null}
           </p>
         </div>
 
-        {showBackLinks && (
-          <Link
-            to="/m"
-            className="shrink-0 rounded-lg border border-gh-border bg-gh-surface px-2.5 py-1.5 text-[11px] font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
-          >
-            Back
-          </Link>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {showBackLinks && (
+            <Link
+              to="/m"
+              className="rounded-lg border border-gh-border bg-gh-bg px-2.5 py-1.5 text-[11px] font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+            >
+              Back
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Essential signals row */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/* Messages count */}
+        <div className="inline-flex items-center gap-1.5 rounded-md border border-gh-border bg-gh-bg px-2 py-1">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="text-gh-muted">
+            <path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75Zm0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75Zm0 5a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1-.75-.75Z"/>
+          </svg>
+          <span className="text-[11px] font-medium text-gh-text">{session.messages.length}</span>
+        </div>
+
+        {/* Duration */}
+        <div className="inline-flex items-center gap-1.5 rounded-md border border-gh-border bg-gh-bg px-2 py-1">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="text-gh-muted">
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8v-3.25a.75.75 0 0 1 1.5 0Z"/>
+          </svg>
+          <span className="text-[11px] font-medium text-gh-text">{formatCompactDuration(session.durationMs)}</span>
+        </div>
+
+        {/* State badges */}
+        {session.isPlanPending && (
+          <span className="inline-flex items-center gap-1 rounded-md border border-gh-attention/30 bg-gh-attention/10 px-2 py-1 text-[11px] font-medium text-gh-attention">
+            <span className="h-1.5 w-1.5 rounded-full bg-gh-attention" />
+            Plan
+          </span>
+        )}
+
+        {activeAgents > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-md border border-gh-active/30 bg-gh-active/10 px-2 py-1 text-[11px] font-medium text-gh-active">
+            <span className="h-1.5 w-1.5 rounded-full bg-gh-active animate-pulse" />
+            {activeAgents} agent{activeAgents > 1 ? 's' : ''}
+          </span>
+        )}
+
+        {inProgressTodos > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-md border border-gh-accent/30 bg-gh-accent/10 px-2 py-1 text-[11px] font-medium text-gh-accent">
+            {inProgressTodos} todo
+          </span>
+        )}
+
+        {blockedTodos > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-md border border-gh-attention/30 bg-gh-attention/10 px-2 py-1 text-[11px] font-medium text-gh-attention">
+            <span className="h-1.5 w-1.5 rounded-full bg-gh-attention" />
+            {blockedTodos} blocked
+          </span>
+        )}
+
+        {doneTodos > 0 && todos.length > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-md border border-gh-active/30 bg-gh-active/10 px-2 py-1 text-[11px] font-medium text-gh-active">
+            {doneTodos}/{todos.length} done
+          </span>
         )}
       </div>
 
       {/* Sticky tab bar */}
-      <div className="mt-3 -mx-3 px-3">
+      <div className="mt-3 -mx-3 border-t border-gh-border/50 px-3 pt-3">
         <div className="flex gap-1 overflow-x-auto pb-1">
           {[
             { id: 'overview' as const, label: 'Overview' },
@@ -1049,7 +1113,7 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
               className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
                 activeSection === tab.id
                   ? 'bg-gh-accent text-white'
-                  : 'border border-gh-border bg-gh-surface/70 text-gh-muted hover:bg-gh-surface hover:text-gh-text'
+                  : 'border border-gh-border bg-gh-bg text-gh-muted hover:bg-gh-surface hover:text-gh-text'
               }`}
             >
               {tab.label}
