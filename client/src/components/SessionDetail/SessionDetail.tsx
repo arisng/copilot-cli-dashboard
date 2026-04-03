@@ -612,7 +612,7 @@ function DetailPanelHeader({
           <p className="mt-1 text-xs leading-5 text-gh-muted">{descriptionByView[activeView]}</p>
           <p className="mt-2 text-xs text-gh-muted/80">
             {activeView === 'threads' && activeThread
-              ? `${activeThread.agentDisplayName || activeThread.agentName}${activeThread.description ? ` · ${activeThread.description}` : ''}`
+              ? `${activeThread.agentId}${activeThread.description ? ` · ${activeThread.description}` : ''}`
               : activeView === 'session-db' && dbViewMode === 'table'
                 ? selectedDbTable || 'Table preview'
                 : session.title}
@@ -1155,9 +1155,14 @@ function ThreadListItem({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">
-            {agent.agentDisplayName || agent.agentName}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-medium">
+              {agent.agentDisplayName || agent.agentName}
+            </p>
+            <span className="shrink-0 rounded bg-gh-bg border border-gh-border px-1.5 py-0.5 text-[10px] font-mono text-gh-muted/80">
+              {agent.agentId}
+            </span>
+          </div>
           {agent.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-gh-muted/90">
               {agent.description}
@@ -1286,9 +1291,16 @@ function ThreadExplorer({
           <div className="shrink-0 border-b border-gh-border bg-gh-surface/40 px-4 py-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-gh-text">
-                  {selectedThread ? selectedThread.agentDisplayName || selectedThread.agentName : 'No thread selected'}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-gh-text">
+                    {selectedThread ? selectedThread.agentDisplayName || selectedThread.agentName : 'No thread selected'}
+                  </p>
+                  {selectedThread && (
+                    <span className="shrink-0 rounded bg-gh-bg border border-gh-border px-1.5 py-0.5 text-[10px] font-mono text-gh-muted/80">
+                      {selectedThread.agentId}
+                    </span>
+                  )}
+                </div>
                 <p className="mt-1 text-xs leading-5 text-gh-muted">
                   {selectedThread?.description || 'Choose a thread from the list to inspect its messages.'}
                 </p>
