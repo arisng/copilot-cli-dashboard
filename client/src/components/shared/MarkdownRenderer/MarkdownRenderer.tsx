@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { CollapsibleMarkdown } from './CollapsibleMarkdown.js';
 import type { Components } from 'react-markdown';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -38,19 +39,29 @@ export interface MarkdownRendererProps {
   variant?: 'desktop' | 'mobile' | 'message';
   className?: string;
   sanitize?: boolean;
+  collapsible?: boolean;
 }
 
 // ============================================================================
 // Shared Base Styles
 // ============================================================================
 
-const baseHeadingClasses = {
+export const desktopBaseHeadingClasses = {
   h1: 'text-base font-bold text-gh-text border-b border-gh-border pb-2 mb-4 mt-6 first:mt-0',
   h2: 'text-sm font-semibold text-gh-accent mt-5 mb-2',
   h3: 'text-xs font-semibold text-gh-text uppercase tracking-wide mt-4 mb-1.5 opacity-80',
   h4: 'text-xs font-semibold text-gh-text mt-3 mb-1',
   h5: 'text-xs font-medium text-gh-muted mt-3 mb-1',
   h6: 'text-xs font-medium text-gh-muted mt-3 mb-1 opacity-70',
+};
+
+export const mobileBaseHeadingClasses = {
+  h1: 'mb-3 border-b border-gh-border pb-2 text-base font-semibold text-gh-text first:mt-0',
+  h2: 'mb-2 mt-4 text-sm font-semibold text-gh-accent',
+  h3: 'mb-1.5 mt-4 text-xs font-semibold uppercase tracking-wide text-gh-muted',
+  h4: 'mb-1.5 mt-3 text-xs font-semibold text-gh-text',
+  h5: 'mb-1 mt-3 text-xs font-medium text-gh-muted',
+  h6: 'mb-1 mt-3 text-xs font-medium text-gh-muted opacity-70',
 };
 
 const baseTextClasses = {
@@ -65,12 +76,12 @@ const baseTextClasses = {
 // ============================================================================
 
 export const desktopMarkdownComponents: Components = {
-  h1: ({ children }) => <h1 className={baseHeadingClasses.h1}>{children}</h1>,
-  h2: ({ children }) => <h2 className={baseHeadingClasses.h2}>{children}</h2>,
-  h3: ({ children }) => <h3 className={baseHeadingClasses.h3}>{children}</h3>,
-  h4: ({ children }) => <h4 className={baseHeadingClasses.h4}>{children}</h4>,
-  h5: ({ children }) => <h5 className={baseHeadingClasses.h5}>{children}</h5>,
-  h6: ({ children }) => <h6 className={baseHeadingClasses.h6}>{children}</h6>,
+  h1: ({ children }) => <h1 className={desktopBaseHeadingClasses.h1}>{children}</h1>,
+  h2: ({ children }) => <h2 className={desktopBaseHeadingClasses.h2}>{children}</h2>,
+  h3: ({ children }) => <h3 className={desktopBaseHeadingClasses.h3}>{children}</h3>,
+  h4: ({ children }) => <h4 className={desktopBaseHeadingClasses.h4}>{children}</h4>,
+  h5: ({ children }) => <h5 className={desktopBaseHeadingClasses.h5}>{children}</h5>,
+  h6: ({ children }) => <h6 className={desktopBaseHeadingClasses.h6}>{children}</h6>,
   
   p: ({ children }) => <p className={baseTextClasses.p}>{children}</p>,
   strong: ({ children }) => <strong className={baseTextClasses.strong}>{children}</strong>,
@@ -231,41 +242,12 @@ export const desktopMarkdownComponents: Components = {
 // ============================================================================
 
 export const mobileMarkdownComponents: Components = {
-  h1: ({ children }) => (
-    <h1 className="mb-3 border-b border-gh-border pb-2 text-base font-semibold text-gh-text first:mt-0">
-      {children}
-    </h1>
-  ),
-  
-  h2: ({ children }) => (
-    <h2 className="mb-2 mt-4 text-sm font-semibold text-gh-accent">
-      {children}
-    </h2>
-  ),
-  
-  h3: ({ children }) => (
-    <h3 className="mb-1.5 mt-4 text-xs font-semibold uppercase tracking-wide text-gh-muted">
-      {children}
-    </h3>
-  ),
-  
-  h4: ({ children }) => (
-    <h4 className="mb-1.5 mt-3 text-xs font-semibold text-gh-text">
-      {children}
-    </h4>
-  ),
-  
-  h5: ({ children }) => (
-    <h5 className="mb-1 mt-3 text-xs font-medium text-gh-muted">
-      {children}
-    </h5>
-  ),
-  
-  h6: ({ children }) => (
-    <h6 className="mb-1 mt-3 text-xs font-medium text-gh-muted opacity-70">
-      {children}
-    </h6>
-  ),
+  h1: ({ children }) => <h1 className={mobileBaseHeadingClasses.h1}>{children}</h1>,
+  h2: ({ children }) => <h2 className={mobileBaseHeadingClasses.h2}>{children}</h2>,
+  h3: ({ children }) => <h3 className={mobileBaseHeadingClasses.h3}>{children}</h3>,
+  h4: ({ children }) => <h4 className={mobileBaseHeadingClasses.h4}>{children}</h4>,
+  h5: ({ children }) => <h5 className={mobileBaseHeadingClasses.h5}>{children}</h5>,
+  h6: ({ children }) => <h6 className={mobileBaseHeadingClasses.h6}>{children}</h6>,
   
   p: ({ children }) => (
     <p className="mb-3 text-sm leading-relaxed text-gh-text">
@@ -510,6 +492,7 @@ export function MarkdownRenderer({
   variant = 'desktop',
   className = '',
   sanitize = true,
+  collapsible = false,
 }: MarkdownRendererProps) {
   const components = useMemo(() => {
     switch (variant) {
@@ -540,6 +523,10 @@ export function MarkdownRenderer({
         No content to display.
       </div>
     );
+  }
+
+  if (collapsible && variant !== 'message') {
+    return <CollapsibleMarkdown content={sanitizedContent} variant={variant} className={className} />;
   }
 
   return (
