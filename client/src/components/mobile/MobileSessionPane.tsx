@@ -638,12 +638,24 @@ function ActivityPanel({
   onStreamChange: (streamId: string) => void;
 }) {
   const [showAllMessages, setShowAllMessages] = useState(false);
+  const [filters, setFilters] = useState<MessageFilterState>(DEFAULT_MESSAGE_FILTER_STATE);
   const activeStream = streams.find((stream) => stream.id === activeStreamId) ?? streams[0];
-  const totalToolCalls = activeStream.messages.reduce((total, message) => total + (message.toolRequests?.length ?? 0), 0);
+
+  const isMainStream = activeStream.id === 'main';
+  const turnOptions = useMemo(() => buildTurnOptions(session.messages), [session.messages]);
+  const availableTools = useMemo(() => getMessageTools(session.messages), [session.messages]);
+
+  const filteredMessages = useMemo(() => {
+    if (!isMainStream) return activeStream.messages;
+    const result = applyMessageFilters(activeStream.messages, filters, turnOptions);
+    return filters.turnId ? [...result].reverse() : result;
+  }, [activeStream.messages, filters, isMainStream, turnOptions]);
+
+  const totalToolCalls = filteredMessages.reduce((total, message) => total + (message.toolRequests?.length ?? 0), 0);
   const visibleMessages = showAllMessages
-    ? activeStream.messages
-    : activeStream.messages.slice(0, MOBILE_VISIBLE_MESSAGES);
-  const hiddenCount = Math.max(0, activeStream.messages.length - visibleMessages.length);
+    ? filteredMessages
+    : filteredMessages.slice(0, MOBILE_VISIBLE_MESSAGES);
+  const hiddenCount = Math.max(0, filteredMessages.length - visibleMessages.length);
 
   useEffect(() => {
     setShowAllMessages(false);
@@ -706,7 +718,7 @@ function ActivityPanel({
           <div className="mt-3 grid grid-cols-3 gap-2">
             <MobileInfoCard
               label="Messages"
-              value={activeStream.messages.length}
+              value={filteredMessages.length}
               valueClassName="text-sm font-semibold text-gh-text"
               variant="subtle"
             />
@@ -719,8 +731,8 @@ function ActivityPanel({
             <MobileInfoCard
               label="Last update"
               value={
-                activeStream.messages.length > 0 ? (
-                  <RelativeTime timestamp={activeStream.messages[0].timestamp} className="text-sm text-gh-text" />
+                filteredMessages.length > 0 ? (
+                  <RelativeTime timestamp={filteredMessages[0].timestamp} className="text-sm text-gh-text" />
                 ) : (
                   <RelativeTime timestamp={session.lastActivityAt} className="text-sm text-gh-text" />
                 )
@@ -732,17 +744,28 @@ function ActivityPanel({
         </div>
       </MobileSectionCard>
 
+      {isMainStream && (
+        <div className="rounded-2xl border border-gh-border bg-gh-surface p-0 overflow-hidden">
+          <MessageFilterBar
+            filters={filters}
+            onChange={setFilters}
+            turnOptions={turnOptions}
+            availableTools={availableTools}
+          />
+        </div>
+      )}
+
       <MobileSectionCard
         title="Messages"
         subtitle={
-          activeStream.messages.length > 0
-            ? `${pluralize(activeStream.messages.length, 'message')} in this stream.`
+          filteredMessages.length > 0
+            ? `${pluralize(filteredMessages.length, 'message')} in this stream.`
             : 'No messages have been captured in this stream yet.'
         }
       >
-        {activeStream.messages.length === 0 ? (
+        {filteredMessages.length === 0 ? (
           <div className="rounded-xl border border-gh-border bg-gh-bg/70 p-4 text-sm text-gh-muted">
-            No messages have been captured for this stream yet.
+            No messages match the current filters.
           </div>
         ) : (
           <>
