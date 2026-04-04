@@ -1916,8 +1916,8 @@ export function SessionDetail() {
   });
   const detailPanelClassName = `flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`;
   const detailGridClassName = showSessionSidebar
-    ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,500px)_minmax(0,1fr)_minmax(18rem,0.85fr)] 2xl:grid-cols-[minmax(16rem,500px)_minmax(0,1fr)_minmax(20rem,0.95fr)] xl:gap-4'
-    : 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,500px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(16rem,500px)_minmax(0,1fr)] xl:gap-4';
+    ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(18rem,0.85fr)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(20rem,0.95fr)] xl:gap-4'
+    : 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] xl:gap-4';
 
   function handleViewChange(view: SessionDetailView) {
     setActiveView(view);
