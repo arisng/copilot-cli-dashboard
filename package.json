@@ -24,6 +24,7 @@
     "build": "npm run build --workspace=server && npm run build --workspace=client",
     "install:all": "npm install",
     "start": "npm run build && node server/dist/index.js",
+    "tunnel:cloudflare": "node ./bin/tunnel-cloudflare.js",
     "tunnel:client": "node ./bin/tunnel-client.js",
     "tunnel:prod": "node ./bin/tunnel-prod.js",
     "prepublishOnly": "npm run build"
