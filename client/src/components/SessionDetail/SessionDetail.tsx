@@ -512,6 +512,101 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
+function MultiSelectDropdown({
+  label,
+  options,
+  selected,
+  onChange,
+  placeholder = 'Select…',
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (selected: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleDocClick(event: MouseEvent) {
+      if (!containerRef.current || containerRef.current.contains(event.target as Node)) return;
+      setOpen(false);
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleDocClick);
+      return () => document.removeEventListener('mousedown', handleDocClick);
+    }
+  }, [open]);
+
+  function toggleOption(value: string) {
+    const set = new Set(selected);
+    if (set.has(value)) set.delete(value);
+    else set.add(value);
+    onChange([...set]);
+  }
+
+  const displayText = selected.length === 0
+    ? placeholder
+    : selected.length === 1
+      ? selected[0]
+      : `${selected.length} selected`;
+
+  return (
+    <div ref={containerRef} className="relative flex min-w-0 flex-col gap-1">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-gh-muted/70">{label}</span>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 min-w-[8rem] items-center justify-between gap-2 rounded-md border border-gh-border bg-gh-bg px-2 text-xs text-gh-text transition-colors hover:border-gh-border focus:border-gh-accent focus:outline-none"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="truncate">{displayText}</span>
+        <svg
+          viewBox="0 0 16 16"
+          width="12"
+          height="12"
+          fill="currentColor"
+          className={`shrink-0 text-gh-muted transition-transform ${open ? 'rotate-180' : ''}`}
+        >
+          <path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-20 mt-1 max-h-64 min-w-full overflow-y-auto rounded-md border border-gh-border bg-gh-bg py-1 shadow-lg"
+          role="listbox"
+          style={{ top: '100%' }}
+        >
+          {options.map((option) => {
+            const isSelected = selected.includes(option);
+            return (
+              <label
+                key={option}
+                className={`flex cursor-pointer items-center gap-2 px-3 py-2 text-xs transition-colors ${
+                  isSelected ? 'bg-gh-accent/10 text-gh-text' : 'text-gh-muted hover:bg-gh-surface/60 hover:text-gh-text'
+                }`}
+                role="option"
+                aria-selected={isSelected}
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-gh-border bg-gh-bg text-gh-accent focus:ring-gh-accent"
+                  checked={isSelected}
+                  onChange={() => toggleOption(option)}
+                />
+                <span className="truncate">{option}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageFilterBar({
   filters,
   onChange,
@@ -596,23 +691,13 @@ function MessageFilterBar({
         </div>
 
         {availableTools.length > 0 && (
-          <label className="flex min-w-0 flex-col gap-1">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-gh-muted/70">Tools</span>
-            <select
-              multiple
-              value={filters.tools}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
-                onChange({ ...filters, tools: selected });
-              }}
-              className="min-h-[2rem] max-h-20 min-w-[8rem] rounded-md border border-gh-border bg-gh-bg px-2 text-xs text-gh-text transition-colors focus:border-gh-accent focus:outline-none"
-              size={Math.min(3, availableTools.length)}
-            >
-              {availableTools.map((tool) => (
-                <option key={tool} value={tool}>{tool}</option>
-              ))}
-            </select>
-          </label>
+          <MultiSelectDropdown
+            label="Tools"
+            options={availableTools}
+            selected={filters.tools}
+            onChange={(tools) => onChange({ ...filters, tools })}
+            placeholder="All tools"
+          />
         )}
 
         <div className="flex flex-wrap items-center gap-2">
