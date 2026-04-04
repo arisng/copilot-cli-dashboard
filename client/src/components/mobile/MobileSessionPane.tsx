@@ -18,6 +18,14 @@ import {
   truncateMobileText,
 } from './mobileSessionViewModels.ts';
 import { sortTodosLatestFirst } from '../../utils/todoSort.ts';
+import {
+  type MessageFilterState,
+  DEFAULT_MESSAGE_FILTER_STATE,
+  getMessageTools,
+  buildTurnOptions,
+  applyMessageFilters,
+} from '../../utils/messageFilters.ts';
+import { MessageFilterBar } from '../shared/MessageFilterBar.tsx';
 
 const MOBILE_VISIBLE_MESSAGES = 10;
 
