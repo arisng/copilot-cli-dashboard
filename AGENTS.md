@@ -59,12 +59,13 @@ Individual workspace commands:
 | `npm run build --workspace=server` | Compile TypeScript to `server/dist/` |
 | `npm run build --workspace=client` | Build static files to `client/dist/` |
 
-Remote access via Dev Tunnels:
+Remote access via tunnels:
 
 | Command | Description |
 |---------|-------------|
-| `npm run tunnel:client` | Expose Vite dev server (port 5173) via Dev Tunnels |
-| `npm run tunnel:prod` | Expose production server (port 3001) via Dev Tunnels |
+| `npm run tunnel:cloudflare` | Expose production server via Cloudflare Quick Tunnel (recommended) |
+| `npm run tunnel:prod` | Expose production server via Microsoft Dev Tunnels (fallback) |
+| `npm run tunnel:client` | Expose Vite dev server via Dev Tunnels (legacy)
 
 Global installation:
 
@@ -218,7 +219,12 @@ Checkpoints created via `/compact` are stored in `checkpoints/` directory with X
 | `VITE_API_TARGET` | http://localhost:3001 | Proxy target for `/api` in dev |
 | `HOST` | localhost | Bind address; set to `0.0.0.0` for LAN access |
 
-### Dev Tunnels
+### Tunnels
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 3001 | Target port for tunnel commands (must match server port) |
+
+### Dev Tunnels (fallback)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEVTUNNEL_TUNNEL_ID` | copiloting-agents-prod/copiloting-agents-client | Fixed tunnel ID for persistent URLs |
@@ -481,4 +487,5 @@ The mobile routes (`/m/*`) require JavaScript to render. Ensure the client bundl
 - `docs/client.md` — Detailed client architecture
 - `docs/server.md` — Detailed server architecture
 - `docs/session-model.md` — Session data format specification
-- `docs/devtunnel.md` — Dev Tunnels workflow documentation
+- `docs/remote-access.md` — Remote access guide (Cloudflare, Tailscale, Dev Tunnels)
+- `docs/devtunnel.md` — Dev Tunnels fallback documentation
