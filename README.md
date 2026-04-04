@@ -159,62 +159,95 @@ HOST=0.0.0.0 PORT=3001 npm run dev
 
 ---
 
-## Access From Your Phone (Remote/dev tunnel)
+## Access From Your Phone (Remote / Public Tunnel)
 
-Use Dev Tunnels when you are away from home or on a different network. The tunnel target depends on how you are running the app.
+When you are away from home or on a different network, use a tunnel to expose your local dashboard publicly. This section covers the recommended approaches.
 
-### Dev mode
+### Option 1: Cloudflare Tunnel (Recommended)
 
-Expose the Vite client on port 5173:
+Cloudflare Quick Tunnels are the simplest free option for ad hoc public sharing. The URL is random each time, which is fine for temporary access.
+
+**Limitations:** Quick Tunnels are for development and testing. They have a cap on concurrent in-flight requests and do not support Server-Sent Events (SSE).
+
+#### Install cloudflared (one-time)
 
 ```bash
+# Windows (winget)
+winget install --id Cloudflare.cloudflared
+
+# macOS (Homebrew)
+brew install cloudflared
+
+# Linux
+# See https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+```
+
+#### Start tunnel (production mode)
+
+Expose only the production server publicly:
+
+```bash
+npm start
+npm run tunnel:cloudflare
+```
+
+The command prints a public URL (e.g., `https://something.trycloudflare.com`). Open it from your phone.
+
+If `npm start` selected a different port because 3001 was busy, pass the same `PORT` to the tunnel command:
+
+```bash
+PORT=3002 npm start
+PORT=3002 npm run tunnel:cloudflare
+```
+
+#### Named tunnel with stable hostname (optional upgrade)
+
+If you want the same URL every time, create a named Cloudflare Tunnel:
+
+1. Authenticate once:
+   ```bash
+   cloudflared tunnel login
+   ```
+
+2. Create and run a named tunnel:
+   ```bash
+   cloudflared tunnel create copiloting-agents
+   cloudflared tunnel route dns copiloting-agents dashboard.yourdomain.com
+   cloudflared tunnel run copiloting-agents
+   ```
+
+See [Cloudflare documentation](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/create-local-tunnel/) for full setup.
+
+### Option 2: Tailscale (Secondary)
+
+Tailscale is ideal if you already use it for device-to-device access. It keeps traffic on your private tailnet.
+
+```bash
+# Install Tailscale, then enable Funnel
+tailscale funnel --bg --https=443 3001
+```
+
+**Limitations:** Funnel has bandwidth limits (approximately 1 Gbps egress, subject to their terms) and requires a Tailscale account.
+
+See [Tailscale Funnel docs](https://tailscale.com/kb/1223/funnel).
+
+### Option 3: Microsoft Dev Tunnels (Fallback)
+
+Dev Tunnels remain available if the other options do not work in your environment.
+
+```bash
+# Windows (winget)
 winget install Microsoft.devtunnel
 devtunnel user login
-npm run dev
-npm run tunnel:client
-```
 
-Keep both server and client running on your laptop, then open the tunnel URL from your phone. The tunnel is private by default, so sign in with the same Microsoft, GitHub, or Entra account in the phone browser.
-
-### Production mode
-
-Expose the single production server on port 3001 by default:
-
-```bash
+# Production mode
 npm start
 npm run tunnel:prod
 ```
 
-`npm run tunnel:prod` now runs a quick preflight against the configured production port (`http://localhost:3001/api/health` by default) and exits with a clear reminder to start the production server first if nothing is listening yet. This uses the built client that Express serves from `client/dist`, so the phone opens the same dashboard without running Vite separately. If `npm start` auto-selected a different port because 3001 was busy, pass that same `PORT` value to `npm run tunnel:prod`.
+**Limitations:** Free tier has bandwidth caps (observed failures at ~5GB/month) and rate limits that may cause 429 errors.
 
-### Fixed Dev Tunnel IDs (recommended)
-
-To avoid random temp URLs, this repo uses fixed tunnel IDs so you can run the tunnel command without extra args:
-
-- dev UI: `copiloting-agents-client` (port 5173)
-- prod server: `copiloting-agents-prod` (port 3001 by default)
-
-#### Dev tunnel command (desktop UI)
-
-```bash
-npm run dev
-npm run tunnel:client
-```
-
-#### Prod tunnel command
-
-```bash
-npm start
-npm run tunnel:prod
-```
-
-If you want to override the default prod tunnel ID:
-
-```bash
-set DEVTUNNEL_TUNNEL_ID=myapp-prod && npm run tunnel:prod
-# (PowerShell alternative)
-$Env:DEVTUNNEL_TUNNEL_ID = 'myapp-prod'; npm run tunnel:prod
-```
+See [docs/devtunnel.md](docs/devtunnel.md) for fixed tunnel IDs and advanced usage.
 
 ## How It Works
 
@@ -292,7 +325,7 @@ npm start     # build + serve on http://localhost:3001 (or the next free port if
 
 `npm start` compiles the TypeScript server, builds the Vite client, then launches Express which serves the built client as static files alongside the API. Everything runs on a single port. When `PORT` is unset and 3001 is already occupied, the server automatically selects the next free port and prints the chosen URL in the startup banner.
 
-To make that production server reachable from your phone while you are away from your local network, run `npm run tunnel:prod` in a second terminal after `npm start`. If you use a custom `PORT` or the default port was auto-shifted because 3001 was busy, run both commands with the same port value so the preflight check and Dev Tunnel target stay aligned.
+To make that production server reachable from your phone while you are away from your local network, run `npm run tunnel:cloudflare` in a second terminal after `npm start`. If you use a custom `PORT` or the default port was auto-shifted because 3001 was busy, run both commands with the same port value so the preflight check and tunnel target stay aligned.
 
 ### Manual build steps
 
