@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useSession } from '../../hooks/useSession.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import {
@@ -1466,6 +1466,14 @@ const SIDEBAR_PAGE_SIZE = 10;
     pageSize: SIDEBAR_PAGE_SIZE,
   }));
 
+  // Context menu state for session items
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    sessionId: string;
+    sessionTitle: string;
+  } | null>(null);
+
   useEffect(() => {
     setBrowseState((previous) => ({
       ...previous,
@@ -1502,16 +1510,35 @@ const SIDEBAR_PAGE_SIZE = 10;
     const isCurrent = s.id === currentId;
     const secondaryLabel = s.gitBranch || getProjectLabel(s.projectPath);
 
+    const handleContextMenu = (event: React.MouseEvent) => {
+      event.preventDefault();
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        sessionId: s.id,
+        sessionTitle: s.title,
+      });
+    };
+
+    const handleOpenInNewTab = () => {
+      window.open(`/sessions/${s.id}`, '_blank');
+      setContextMenu(null);
+    };
+
     return (
       <button
         key={s.id}
         onClick={() => navigate(`/sessions/${s.id}`)}
+        onContextMenu={handleContextMenu}
         className={`w-full px-3 py-2.5 text-left flex items-start gap-2 transition-colors hover:bg-gh-surface/60
           ${isCurrent ? 'bg-gh-surface border-l-2 border-gh-accent' : 'border-l-2 border-transparent'}`}
         >
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${statusDot(s)}`} />
           <div className="min-w-0 flex-1">
-            <p className={`text-xs font-medium truncate leading-snug ${isCurrent ? 'text-gh-text' : 'text-gh-muted'}`}>
+            <p
+              className={`text-xs font-medium leading-snug line-clamp-2 ${isCurrent ? 'text-gh-text' : 'text-gh-muted'}`}
+              title={s.title}
+            >
               {s.title}
             </p>
             <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
@@ -1674,6 +1701,37 @@ const SIDEBAR_PAGE_SIZE = 10;
           </div>
         )}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setContextMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu(null);
+            }}
+          />
+          <div
+            className="fixed z-50 min-w-[10rem] rounded-lg border border-gh-border bg-gh-surface shadow-lg py-1"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              onClick={() => {
+                window.open(`/sessions/${contextMenu.sessionId}`, '_blank');
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left text-xs text-gh-text hover:bg-gh-accent/10 hover:text-gh-accent transition-colors flex items-center gap-2"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Open in new tab
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1835,7 +1893,7 @@ export function SessionDetail() {
   });
   const detailPanelClassName = `flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`;
   const detailGridClassName = showSessionSidebar
-    ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(18rem,0.85fr)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(20rem,0.95fr)] xl:gap-4'
+    ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(18rem,450px)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(20rem,450px)] xl:gap-4'
     : 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] xl:gap-4';
 
   function handleViewChange(view: SessionDetailView) {
