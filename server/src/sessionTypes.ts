@@ -98,6 +98,7 @@ export interface ActiveSubAgent {
   description?: string;
   isCompleted: boolean;
   sessionId?: string; // sub-agent's own session directory ID
+  lastActivityAt?: string; // ISO 8601 timestamp
 }
 
 export type SessionUsageMetricSource =

@@ -421,7 +421,7 @@ function buildSubAgentMessages(events: RawEvent[], agents: ActiveSubAgent[], isO
 function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
   // Accumulate all sub-agents across the entire session (never reset).
   // Each toolCallId is unique, so no duplicates.
-  const started = new Map<string, { agentName: string; agentDisplayName: string; sessionId?: string }>();
+  const started = new Map<string, { agentName: string; agentDisplayName: string; sessionId?: string; lastActivityAt: string }>();
   const completed = new Set<string>();
   const descriptions = new Map<string, string>();
   // track read_agent toolCallIds so we can detect their completion via tool.execution_complete
@@ -455,7 +455,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
         }
       }
       
-      started.set(d.toolCallId, { agentName: d.agentName, agentDisplayName, sessionId: d.sessionId });
+      started.set(d.toolCallId, { agentName: d.agentName, agentDisplayName, sessionId: d.sessionId, lastActivityAt: event.timestamp });
     }
   }
 
@@ -479,6 +479,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
               started.set(tr.toolCallId, {
                 agentName: tr.name,
                 agentDisplayName: args.name,
+                lastActivityAt: event.timestamp,
               });
             }
           }
@@ -487,6 +488,11 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
     } else if (event.type === 'subagent.completed' || event.type === 'subagent.failed') {
       const d = event.data as { toolCallId: string };
       completed.add(d.toolCallId);
+      // Update lastActivityAt for completion event
+      const agent = started.get(d.toolCallId);
+      if (agent) {
+        agent.lastActivityAt = event.timestamp;
+      }
     } else if (event.type === 'system.notification') {
       // Task sub-agents emit system.notification with kind.type: 'agent_idle' when they finish
       const d = event.data as { content?: string; kind?: { type?: string; agentId?: string; agentType?: string; description?: string }; timestamp?: string };
@@ -540,6 +546,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
         started.set(d.toolCallId, {
           agentName: 'read_agent',
           agentDisplayName: agentId ?? 'Read Agent',
+          lastActivityAt: event.timestamp,
         });
         if (agentId) descriptions.set(d.toolCallId, agentId);
       }
@@ -547,6 +554,11 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       const d = event.data as { toolCallId: string };
       if (readAgentIds.has(d.toolCallId) || taskToolIds.has(d.toolCallId)) {
         completed.add(d.toolCallId);
+        // Update lastActivityAt for tool completion
+        const agent = started.get(d.toolCallId);
+        if (agent) {
+          agent.lastActivityAt = event.timestamp;
+        }
       }
     }
   }
@@ -574,6 +586,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       started.set(syntheticToolCallId, {
         agentName: idleNotification.agentType,
         agentDisplayName,
+        lastActivityAt: idleNotification.timestamp,
       });
       if (idleNotification.description) {
         descriptions.set(syntheticToolCallId, idleNotification.description);
@@ -597,7 +610,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
   }
 
   // Build initial result
-  const agents = [...started.entries()].map(([toolCallId, { agentName, agentDisplayName, sessionId }]) => {
+  const agents = [...started.entries()].map(([toolCallId, { agentName, agentDisplayName, sessionId, lastActivityAt }]) => {
     const agentId = toolCallIdToAgentId.get(toolCallId) ?? agentDisplayName;
     return {
       toolCallId,
@@ -607,6 +620,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       description: descriptions.get(toolCallId),
       isCompleted: completed.has(toolCallId),
       sessionId,
+      lastActivityAt,
     };
   });
 
