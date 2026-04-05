@@ -306,7 +306,8 @@ function normalizeMessageText(content: string): string {
 function titleFromContent(content?: string): string {
   if (!content) return 'Untitled session';
   const text = normalizeMessageText(content);
-  return text.length > 80 ? text.slice(0, 77) + '…' : text;
+  // Allow longer titles for better sidebar display with line-clamp-2
+  return text.length > 200 ? text.slice(0, 197) + '…' : text;
 }
 
 function extractTitle(messages: ParsedMessage[]): string {
