@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { MessagePreview, SessionSummary } from '../../api/client.ts';
+import type { MessagePreview, SessionSummary, ActiveSubAgent } from '../../api/client.ts';
 import {
   DEFAULT_SESSION_BROWSE_STATE,
   SESSION_BROWSE_SORT_FIELDS,
@@ -25,7 +25,7 @@ import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 import { MobileInfoCard } from './MobileInfoCard.tsx';
 import { getMobileSessionState } from './mobileSessionState.ts';
- 
+
 type MobileListGroupId = 'priority' | 'working' | 'quiet';
 type SignalTone = 'attention' | 'active' | 'muted';
 
@@ -40,6 +40,7 @@ interface SessionCardModel {
   projectName: string;
   latestPreview?: MessagePreview;
   activeAgentCount: number;
+  activeAgents: ActiveSubAgent[];
   isPriority: boolean;
   isWorkingBucket: boolean;
   signals: SessionSignal[];
@@ -73,10 +74,54 @@ const SECTION_METADATA: Omit<SessionGroup, 'sessions'>[] = [
   },
 ];
 
+// Tool metadata matching desktop SessionCard.tsx
+const TOOL_META: Record<string, { label: string; dot: string; text: string; border: string }> = {
+  bash:          { label: 'bash',       dot: 'bg-blue-400',    text: 'text-blue-400',    border: 'border-blue-400/30' },
+  edit:          { label: 'edit',       dot: 'bg-yellow-400',  text: 'text-yellow-400',  border: 'border-yellow-400/30' },
+  view:          { label: 'read',       dot: 'bg-purple-400',  text: 'text-purple-400',  border: 'border-purple-400/30' },
+  read:          { label: 'read',       dot: 'bg-purple-400',  text: 'text-purple-400',  border: 'border-purple-400/30' },
+  glob:          { label: 'glob',       dot: 'bg-purple-400',  text: 'text-purple-400',  border: 'border-purple-400/30' },
+  grep:          { label: 'grep',       dot: 'bg-purple-400',  text: 'text-purple-400',  border: 'border-purple-400/30' },
+  write:         { label: 'write',      dot: 'bg-orange-400',  text: 'text-orange-400',  border: 'border-orange-400/30' },
+  task:          { label: 'agent',      dot: 'bg-green-400',   text: 'text-green-400',   border: 'border-green-400/30' },
+  task_complete: { label: 'agent',      dot: 'bg-green-400',   text: 'text-green-400',   border: 'border-green-400/30' },
+  read_agent:    { label: 'read agent', dot: 'bg-green-400',   text: 'text-green-400',   border: 'border-green-400/30' },
+  ask_user:      { label: 'question',   dot: 'bg-pink-400',    text: 'text-pink-400',    border: 'border-pink-400/30' },
+  report_intent: { label: 'intent',     dot: 'bg-gray-400',    text: 'text-gray-400',    border: 'border-gray-400/30' },
+  web_fetch:     { label: 'web fetch',  dot: 'bg-gh-accent',   text: 'text-gh-accent',   border: 'border-gh-accent/30' },
+  web_search:    { label: 'web search', dot: 'bg-gh-accent',   text: 'text-gh-accent',   border: 'border-gh-accent/30' },
+};
+
+const DEFAULT_TOOL_META = { label: '', dot: 'bg-gh-accent', text: 'text-gh-accent', border: 'border-gh-accent/30' };
+
+function toolMeta(name: string) {
+  if (TOOL_META[name]) return { ...TOOL_META[name] };
+  if (name.startsWith('mcp-atlassian-confluence')) return { label: 'confluence', dot: 'bg-blue-400', text: 'text-blue-400', border: 'border-blue-400/30' };
+  if (name.startsWith('mcp-atlassian-jira'))       return { label: 'jira',       dot: 'bg-indigo-400', text: 'text-indigo-400', border: 'border-indigo-400/30' };
+  return { ...DEFAULT_TOOL_META, label: name.replace(/_/g, ' ') };
+}
+
 function ChevronRightIcon() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
       <path d="M5.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 11-1.06-1.06L8.94 8 5.22 4.28a.75.75 0 010-1.06z" />
+    </svg>
+  );
+}
+
+function CopyIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className={className}>
+      <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/>
+      <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
+    </svg>
+  );
+}
+
+function CheckIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className={className}>
+      <path d="M13.78 4.22a.75.75 0 010 1.06l-7.5 7.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 011.06-1.06L6 10.94l7.22-7.22a.75.75 0 011.06 0z"/>
     </svg>
   );
 }
@@ -121,8 +166,74 @@ function SessionSignalChip({ label, tone }: SessionSignal) {
   );
 }
 
+function ToolChip({ name, count }: { name: string; count?: number }) {
+  const meta = toolMeta(name);
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-mono ${meta.border} bg-gh-bg`}>
+      <span className={`w-1 h-1 rounded-full shrink-0 ${meta.dot}`} />
+      <span className={meta.text}>{meta.label}</span>
+      {count && count > 1 && <span className="text-gh-muted">×{count}</span>}
+    </span>
+  );
+}
+
+function CopyBranch({ branch }: { branch: string }) {
+  const [copied, setCopied] = useState(false);
+  
+  function handleClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(branch).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+  
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title="Copy branch name"
+      aria-label={`Copy branch name ${branch}`}
+      className="inline-flex h-[22px] min-w-[44px] items-center justify-center gap-1 rounded-full border border-gh-accent/20 bg-gh-accent/5 px-2 text-[10px] font-mono text-gh-accent transition-colors hover:border-gh-accent/40 hover:bg-gh-accent/10 hover:text-gh-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40 active:scale-95"
+    >
+      <span className="truncate max-w-[80px]">{branch}</span>
+      <span className="flex-shrink-0 opacity-70 transition-opacity hover:opacity-100">
+        {copied ? <CheckIcon className="text-gh-active" /> : <CopyIcon />}
+      </span>
+    </button>
+  );
+}
+
+function ModelChip({ model }: { model: string }) {
+  // Truncate long model names for mobile
+  const displayModel = model.length > 20 ? model.slice(0, 18) + '…' : model;
+  
+  return (
+    <span 
+      className="inline-flex h-[22px] max-w-[120px] items-center truncate rounded-full border border-gh-border/70 bg-gh-bg/70 px-2 text-[10px] font-mono text-gh-muted"
+      title={model}
+    >
+      {displayModel}
+    </span>
+  );
+}
+
+function ActiveAgentPill({ agent }: { agent: ActiveSubAgent }) {
+  return (
+    <span className="inline-flex h-[24px] items-center gap-1 rounded-full border border-gh-border bg-gh-bg px-2 text-[10px] font-mono text-gh-accent">
+      <span className="w-1 h-1 rounded-full bg-gh-active animate-pulse" />
+      <span className="truncate max-w-[80px]">{agent.agentDisplayName || agent.agentName}</span>
+    </span>
+  );
+}
+
 function getActiveAgentCount(session: SessionSummary): number {
   return session.activeSubAgents.filter((agent) => !agent.isCompleted).length;
+}
+
+function getActiveAgents(session: SessionSummary): ActiveSubAgent[] {
+  return session.activeSubAgents.filter((agent) => !agent.isCompleted);
 }
 
 function getLatestPreview(session: SessionSummary): MessagePreview | undefined {
@@ -177,7 +288,8 @@ function getSessionSignals(session: SessionSummary, activeAgentCount: number): S
 }
 
 function buildSessionCardModel(session: SessionSummary, now: number): SessionCardModel {
-  const activeAgentCount = getActiveAgentCount(session);
+  const activeAgents = getActiveAgents(session);
+  const activeAgentCount = activeAgents.length;
   const isPriority = isPrioritySession(session);
   const hasConversation = hasVisibleConversation(session);
   const isWorkingBucket =
@@ -192,6 +304,7 @@ function buildSessionCardModel(session: SessionSummary, now: number): SessionCar
     projectName: getProjectLabel(session.projectPath),
     latestPreview: getLatestPreview(session),
     activeAgentCount,
+    activeAgents,
     isPriority,
     isWorkingBucket,
     signals: getSessionSignals(session, activeAgentCount),
@@ -226,12 +339,14 @@ function createSessionGroups(items: SessionCardModel[]): SessionGroup[] {
 }
 
 function SessionPreviewCard({ item }: { item: SessionCardModel }) {
-  const { session, state, projectName, latestPreview, activeAgentCount, signals } = item;
+  const { session, state, projectName, latestPreview, activeAgentCount, activeAgents, signals } = item;
+  
   const previewMetrics = [
     { label: 'Duration', value: formatDuration(session.durationMs) },
     { label: 'Messages', value: session.messageCount },
     { label: 'Agents', value: activeAgentCount },
   ];
+  
   const cardClassName = session.needsAttention || session.isPlanPending
     ? 'border-gh-attention/40 bg-gh-attention/5 hover:border-gh-attention/60'
     : session.isTaskComplete
@@ -241,6 +356,27 @@ function SessionPreviewCard({ item }: { item: SessionCardModel }) {
         : session.isAborted
           ? 'border-red-500/25 bg-red-500/5 hover:border-red-500/40'
           : 'border-gh-border bg-gh-surface/90 hover:border-gh-accent/30 hover:bg-gh-surface';
+
+  // Generate tool chips from latest preview (deduplicated by label)
+  const toolChips = useMemo(() => {
+    if (!latestPreview?.toolNames || latestPreview.toolNames.length === 0) return [];
+    
+    const counts = new Map<string, { name: string; count: number }>();
+    for (const name of latestPreview.toolNames) {
+      const label = toolMeta(name).label;
+      const existing = counts.get(label);
+      if (existing) existing.count++;
+      else counts.set(label, { name, count: 1 });
+    }
+    return [...counts.values()].slice(0, 3);
+  }, [latestPreview?.toolNames]);
+  
+  const overflowCount = latestPreview?.toolNames 
+    ? Math.max(0, (() => {
+        const uniqueLabels = new Set(latestPreview.toolNames!.map(name => toolMeta(name).label));
+        return uniqueLabels.size - 3;
+      })())
+    : 0;
 
   return (
     <Link
@@ -254,13 +390,19 @@ function SessionPreviewCard({ item }: { item: SessionCardModel }) {
               {state.label}
             </span>
             <ModeBadge mode={session.currentMode} />
+            {session.model && <ModelChip model={session.model} />}
           </div>
 
           <h3 className="mt-3 text-base font-semibold leading-snug text-gh-text">{session.title}</h3>
-          <p className="mt-1 text-xs leading-relaxed text-gh-muted">
-            {projectName}
-            {session.gitBranch ? <span> · {session.gitBranch}</span> : null}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-xs leading-relaxed text-gh-muted">{projectName}</span>
+            {session.gitBranch && (
+              <>
+                <span className="text-gh-muted">·</span>
+                <CopyBranch branch={session.gitBranch} />
+              </>
+            )}
+          </div>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -279,6 +421,20 @@ function SessionPreviewCard({ item }: { item: SessionCardModel }) {
         </div>
       )}
 
+      {/* Active agent pills - show up to 2 when there are active agents */}
+      {activeAgents.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {activeAgents.slice(0, 2).map((agent) => (
+            <ActiveAgentPill key={agent.toolCallId} agent={agent} />
+          ))}
+          {activeAgents.length > 2 && (
+            <span className="inline-flex h-[24px] items-center rounded-full border border-gh-border/70 bg-gh-bg/50 px-2 text-[10px] text-gh-muted">
+              +{activeAgents.length - 2} more
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mt-3 grid grid-cols-3 gap-2">
         {previewMetrics.map((metric) => (
           <MobileInfoCard key={metric.label} label={metric.label} value={metric.value} variant="subtle" />
@@ -291,11 +447,16 @@ function SessionPreviewCard({ item }: { item: SessionCardModel }) {
             <p className="text-[11px] uppercase tracking-wide text-gh-muted">
               Latest {latestPreview.role}
             </p>
-            {latestPreview.toolNames && latestPreview.toolNames.length > 0 ? (
-              <span className="text-[11px] text-gh-muted">
-                {latestPreview.toolNames.length} tool{latestPreview.toolNames.length === 1 ? '' : 's'}
-              </span>
-            ) : null}
+            {toolChips.length > 0 && (
+              <div className="flex items-center gap-1">
+                {toolChips.map(({ name, count }) => (
+                  <ToolChip key={name} name={name} count={count} />
+                ))}
+                {overflowCount > 0 && (
+                  <span className="text-[10px] text-gh-muted">+{overflowCount}</span>
+                )}
+              </div>
+            )}
           </div>
           <p className="mt-1.5 text-sm leading-relaxed text-gh-text line-clamp-3">{latestPreview.snippet}</p>
         </div>
@@ -543,7 +704,7 @@ export function MobileSessionList() {
               <button
                 type="button"
                 onClick={resetBrowse}
-                className="shrink-0 rounded-full border border-gh-border bg-gh-bg px-3 py-1.5 text-[11px] font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+                className="h-8 min-w-[44px] shrink-0 rounded-full border border-gh-border bg-gh-bg px-3 text-[11px] font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40"
               >
                 Reset
               </button>
@@ -609,7 +770,7 @@ export function MobileSessionList() {
                 <BrowsePagination
                   page={browse.page}
                   totalPages={browse.totalPages}
-                  totalItems={browse.totalItems}
+                  totalItems={browse.totalPages}
                   pageSize={browse.pageSize}
                   onPageChange={handlePageChange}
                   size="mobile"
@@ -661,7 +822,7 @@ export function MobileSessionList() {
             <button
               type="button"
               onClick={resetBrowse}
-              className="mt-3 inline-flex rounded-full border border-gh-border bg-gh-bg px-3 py-2 text-sm font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+              className="mt-3 inline-flex h-10 min-w-[44px] items-center rounded-full border border-gh-border bg-gh-bg px-3 text-sm font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40"
             >
               Reset browse
             </button>
