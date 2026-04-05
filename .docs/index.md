@@ -14,6 +14,7 @@ This index links Diátaxis-organized documentation for the workspace.
 ### Dashboard
 
 - [How to Access the Dashboard From Your Phone](how-to/dashboard/access-from-your-phone.md)
+- [How to Add a Tree View Component](how-to/dashboard/add-a-tree-view-component.md)
 - [How to Run the Production Server](how-to/dashboard/run-the-production-server.md)
 - [Show Unknown Context Sessions](how-to/dashboard/show-unknown-context-sessions.md)
 
@@ -44,6 +45,7 @@ This index links Diátaxis-organized documentation for the workspace.
 
 - [About the Desktop Session UX Refresh](explanation/dashboard/desktop-session-ux.md)
 - [About the Dashboard Architecture](explanation/dashboard/how-it-works.md)
+- [File Tree Component Design](explanation/dashboard/file-tree-component-design.md)
 - [Session Overview Column Design](explanation/dashboard/session-overview-column-design.md)
 - [Todo Sorting Design](explanation/dashboard/todo-sorting-design.md)
 
