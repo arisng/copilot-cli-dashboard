@@ -1108,7 +1108,9 @@ function ThreadListItem({
           {agent.agentId}
         </span>
         {agent.lastActivityAt && (
-          <RelativeTime timestamp={agent.lastActivityAt} />
+          <span className="text-[11px] text-gh-muted shrink-0">
+            <RelativeTime timestamp={agent.lastActivityAt} />
+          </span>
         )}
       </div>
       <p className="mt-1 line-clamp-2 text-xs leading-5 text-gh-muted/90">
@@ -1230,15 +1232,7 @@ function ThreadExplorer({
                   {selectedThread?.description || 'Choose a thread from the list to inspect its messages.'}
                 </p>
               </div>
-              {selectedThread && (
-                <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${
-                  selectedThread.isCompleted
-                    ? 'border-gh-border bg-gh-bg/70 text-gh-muted'
-                    : 'border-gh-active/30 bg-gh-active/10 text-gh-active'
-                }`}>
-                  {selectedThread.isCompleted ? 'Done' : 'Running'}
-                </span>
-              )}
+
             </div>
           </div>
 
