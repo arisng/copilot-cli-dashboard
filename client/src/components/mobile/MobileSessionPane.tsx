@@ -1,8 +1,12 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import type { ActiveSubAgent, ParsedMessage, SessionDetail, TodoItem, ToolRequest } from '../../api/client.ts';
+import type { ActiveSubAgent, ParsedMessage, SessionDetail, TodoItem, ToolRequest, SessionArtifactEntry, SessionArtifactGroup, SessionArtifacts } from '../../api/client.ts';
 import { useSession } from '../../hooks/useSession.ts';
+import { fetchSessionArtifacts } from '../../api/client.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
+import { FileTree } from '../SessionDetail/FileTree.tsx';
+import { ImagePreview } from '../SessionDetail/ImagePreview.tsx';
+import { isImageFile } from '../../utils/fileUtils.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
@@ -26,15 +30,20 @@ import {
   applyMessageFilters,
 } from '../../utils/messageFilters.ts';
 import { MessageFilterBar } from '../shared/MessageFilterBar.tsx';
+import {
+  MobileToolBlock,
+  MobileReasoningBlock,
+} from './MobileToolBlocks.tsx';
 
 const MOBILE_VISIBLE_MESSAGES = 10;
 
-type DetailSectionId = 'overview' | 'activity' | 'work' | 'agents';
+type DetailSectionId = 'overview' | 'activity' | 'work' | 'agents' | 'checkpoints' | 'research' | 'files';
 
 interface DetailTab {
   id: DetailSectionId;
   label: string;
   badge?: string;
+  count?: number;
 }
 
 interface MessageStream {
@@ -73,6 +82,29 @@ const TODO_STATUS_CONFIG: Record<string, { label: string; dot: string; accent: s
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return '0 B';
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let index = 0;
+  let value = sizeBytes;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return `${value >= 10 || index === 0 ? Math.round(value) : value.toFixed(1)} ${units[index]}`;
+}
+
+function collectArtifactFiles(entries: SessionArtifactEntry[]): SessionArtifactEntry[] {
+  return entries.flatMap((entry) => {
+    if (entry.kind === 'file') {
+      return [entry];
+    }
+    return collectArtifactFiles(entry.children ?? []);
+  });
 }
 
 function isDoneStatus(status: string) {
@@ -191,28 +223,16 @@ function MobileSectionCard({
   );
 }
 
-function ToolStatusPill({ tool }: { tool: ToolRequest }) {
-  const toneClass = tool.error
-    ? 'border-gh-attention/30 bg-gh-attention/10 text-gh-attention'
-    : tool.result
-      ? 'border-gh-active/30 bg-gh-active/10 text-gh-active'
-      : 'border-gh-border bg-gh-bg text-gh-muted';
 
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium ${toneClass}`}>
-      <span>{tool.toolTitle || tool.name}</span>
-      <span className="text-[10px] opacity-80">{tool.error ? 'Error' : tool.result ? 'Done' : 'Pending'}</span>
-    </span>
-  );
-}
 
 function MobileMessageCard({ message }: { message: ParsedMessage }) {
-  const snippet = truncateMobileText(getMessageSnippet(message), MOBILE_MESSAGE_SNIPPET_MAX_LENGTH);
-  const toolNames = message.toolRequests?.map((tool) => tool.toolTitle || tool.name) ?? [];
-  const hasDetails =
-    message.content.trim().length > snippet.length ||
-    Boolean(message.reasoning?.trim()) ||
-    (message.toolRequests?.length ?? 0) > 0;
+  const hasContent = message.content.trim().length > 0;
+  const hasReasoning = Boolean(message.reasoning?.trim());
+  const hasTools = (message.toolRequests?.length ?? 0) > 0;
+  const isTaskComplete = message.role === 'task_complete';
+
+  // For assistant messages with tools but no content, show "Using tools…"
+  const showUsingToolsIndicator = message.role === 'assistant' && !hasContent && hasTools;
 
   return (
     <article className="rounded-2xl border border-gh-border bg-gh-surface p-4 shadow-sm">
@@ -223,78 +243,35 @@ function MobileMessageCard({ message }: { message: ParsedMessage }) {
           >
             {titleCaseMobileLabel(message.role)}
           </span>
-          {message.toolRequests?.length ? (
-            <span className="text-[11px] text-gh-muted">{pluralize(message.toolRequests.length, 'tool call')}</span>
+          {hasTools ? (
+            <span className="text-[11px] text-gh-muted">{pluralize(message.toolRequests!.length, 'tool call')}</span>
           ) : null}
         </div>
         <RelativeTime timestamp={message.timestamp} className="shrink-0 text-xs text-gh-muted" />
       </div>
 
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-gh-text">{snippet}</p>
+      {/* Reasoning block */}
+      {hasReasoning && <div className="mt-3"><MobileReasoningBlock text={message.reasoning!} /></div>}
 
-      {toolNames.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {toolNames.slice(0, 3).map((toolName, index) => (
-            <span
-              key={`${message.id}-${toolName}-${index}`}
-              className="rounded-full border border-gh-border bg-gh-bg px-2 py-1 text-[11px] text-gh-muted"
-            >
-              {toolName}
-            </span>
-          ))}
-          {toolNames.length > 3 ? (
-            <span className="rounded-full border border-gh-border bg-gh-bg px-2 py-1 text-[11px] text-gh-muted">
-              +{toolNames.length - 3} more
-            </span>
+      {/* Content with Markdown rendering */}
+      {hasContent ? (
+        <div className="mt-3 text-sm text-gh-text">
+          {isTaskComplete ? (
+            <div className="text-xs font-semibold text-gh-active mb-2 uppercase tracking-wide">Task complete</div>
           ) : null}
+          <MarkdownRenderer content={message.content} variant="message" />
         </div>
+      ) : showUsingToolsIndicator ? (
+        <p className="mt-3 text-gh-muted text-xs italic">Using tools…</p>
       ) : null}
 
-      {hasDetails ? (
-        <details className="mt-3 group">
-          <summary className="flex list-none cursor-pointer items-center justify-between gap-3 text-xs font-medium text-gh-accent">
-            <span>Expand message</span>
-            <svg
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="currentColor"
-              className="shrink-0 text-gh-muted transition-transform group-open:rotate-90"
-            >
-              <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
-            </svg>
-          </summary>
-          <div className="mt-3 space-y-3 border-t border-gh-border/60 pt-3">
-            {message.content.trim() ? (
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gh-muted">Content</p>
-                <pre className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-gh-text">
-                  {message.content.trim()}
-                </pre>
-              </div>
-            ) : null}
-
-            {message.reasoning?.trim() ? (
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gh-muted">Reasoning</p>
-                <pre className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-gh-muted">
-                  {message.reasoning.trim()}
-                </pre>
-              </div>
-            ) : null}
-
-            {message.toolRequests?.length ? (
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gh-muted">Tool activity</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {message.toolRequests.map((tool) => (
-                    <ToolStatusPill key={tool.toolCallId} tool={tool} />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </details>
+      {/* Tool blocks */}
+      {hasTools ? (
+        <div className="mt-3 space-y-1.5">
+          {message.toolRequests!.map((tool) => (
+            <MobileToolBlock key={tool.toolCallId} tool={tool} />
+          ))}
+        </div>
       ) : null}
     </article>
   );
@@ -988,14 +965,312 @@ function AgentsPanel({
   );
 }
 
+// ============================================================================
+// Artifact Panel (shared component for checkpoints, research, files)
+// ============================================================================
+
+interface ArtifactPanelProps {
+  group: SessionArtifactGroup | null;
+  sessionId: string;
+  title: string;
+  emptyMessage: string;
+}
+
+function ArtifactPanel({ group, sessionId, title, emptyMessage }: ArtifactPanelProps) {
+  const files = useMemo(() => (group?.entries ? collectArtifactFiles(group.entries) : []), [group?.entries]);
+  const [selectedPath, setSelectedPath] = useState<string>(files[0]?.path ?? '');
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (files.length > 0 && !files.some((f) => f.path === selectedPath)) {
+      setSelectedPath(files[0].path);
+    }
+  }, [files, selectedPath]);
+
+  const selectedFile = files.find((f) => f.path === selectedPath) ?? files[0] ?? null;
+
+  const handleToggleExpand = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  if (!group || group.status === 'missing') {
+    return (
+      <MobileSectionCard title={title} subtitle={emptyMessage}>
+        <div className="rounded-xl border border-dashed border-gh-border bg-gh-bg/70 p-4 text-sm text-gh-muted">
+          {group?.message ?? `No ${title.toLowerCase()} content has been captured for this session.`}
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  if (group.status === 'unreadable') {
+    return (
+      <MobileSectionCard title={title} subtitle="Unable to read content">
+        <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+          {group.message ?? 'The content could not be read.'}
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <MobileSectionCard
+        title={title}
+        subtitle={files.length > 0 ? `${pluralize(files.length, 'file')} available.` : 'No files recorded.'}
+      >
+        {files.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gh-border bg-gh-bg/70 p-4 text-sm text-gh-muted">
+            No files found in this artifact group.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* File selector dropdown for mobile */}
+            <div className="rounded-xl border border-gh-border bg-gh-bg/70 p-2">
+              <select
+                value={selectedPath}
+                onChange={(e) => setSelectedPath(e.target.value)}
+                className="w-full rounded-lg border border-gh-border bg-gh-surface px-3 py-2.5 text-sm text-gh-text focus:border-gh-accent focus:outline-none"
+              >
+                {files.map((file) => (
+                  <option key={file.path} value={file.path}>
+                    {file.name} ({formatBytes(file.sizeBytes)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* File tree (collapsible) */}
+            {group.entries && group.entries.length > 0 && (
+              <details className="group rounded-xl border border-gh-border bg-gh-bg/50">
+                <summary className="flex cursor-pointer items-center justify-between p-3 text-sm font-medium text-gh-text">
+                  <span>Browse files</span>
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="12"
+                    height="12"
+                    fill="currentColor"
+                    className="text-gh-muted transition-transform group-open:rotate-90"
+                  >
+                    <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
+                  </svg>
+                </summary>
+                <div className="border-t border-gh-border/50 p-2">
+                  <FileTree
+                    entries={group.entries}
+                    selectedPath={selectedPath}
+                    onSelectFile={setSelectedPath}
+                  />
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+      </MobileSectionCard>
+
+      {/* Selected file content */}
+      {selectedFile && (
+        <MobileSectionCard
+          title={selectedFile.name}
+          subtitle={`${formatBytes(selectedFile.sizeBytes)} · ${selectedFile.path}`}
+        >
+          <div className="overflow-hidden rounded-xl border border-gh-border bg-gh-bg/50">
+            {isImageFile(selectedFile.name) ? (
+              <ImagePreview
+                sessionId={sessionId}
+                filePath={selectedFile.path}
+                fileName={selectedFile.name}
+                fileSizeBytes={selectedFile.sizeBytes}
+              />
+            ) : selectedFile.content ? (
+              <div className="p-3">
+                <MarkdownRenderer content={selectedFile.content} variant="mobile" collapsible />
+              </div>
+            ) : (
+              <div className="p-4 text-sm text-gh-muted">
+                No text content is available for this file.
+              </div>
+            )}
+          </div>
+        </MobileSectionCard>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Individual Artifact Panels
+// ============================================================================
+
+function useSessionArtifacts(sessionId: string) {
+  const [artifacts, setArtifacts] = useState<SessionArtifacts | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setArtifacts(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetchSessionArtifacts(sessionId)
+      .then((data) => {
+        if (cancelled) return;
+        setArtifacts(data);
+      })
+      .catch((fetchError) => {
+        if (cancelled) return;
+        setArtifacts(null);
+        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load artifacts');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  return { artifacts, loading, error };
+}
+
+function getArtifactGroupByPath(artifacts: SessionArtifacts | null, path: 'checkpoints' | 'research' | 'files'): SessionArtifactGroup | null {
+  if (!artifacts) return null;
+  return artifacts.folders.find((group) => group.path === path) ?? null;
+}
+
+function CheckpointsPanel({ sessionId }: { sessionId: string }) {
+  const { artifacts, loading, error } = useSessionArtifacts(sessionId);
+  const group = getArtifactGroupByPath(artifacts, 'checkpoints');
+
+  if (loading) {
+    return (
+      <MobileSectionCard title="Checkpoints" subtitle="Loading checkpoint data...">
+        <div className="flex items-center justify-center py-8">
+          <LoadingSpinner />
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  if (error) {
+    return (
+      <MobileSectionCard title="Checkpoints" subtitle="Failed to load">
+        <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+          {error}
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  return (
+    <ArtifactPanel
+      group={group}
+      sessionId={sessionId}
+      title="Checkpoints"
+      emptyMessage="Captured checkpoints from context compaction."
+    />
+  );
+}
+
+function ResearchPanel({ sessionId }: { sessionId: string }) {
+  const { artifacts, loading, error } = useSessionArtifacts(sessionId);
+  const group = getArtifactGroupByPath(artifacts, 'research');
+
+  if (loading) {
+    return (
+      <MobileSectionCard title="Research" subtitle="Loading research data...">
+        <div className="flex items-center justify-center py-8">
+          <LoadingSpinner />
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  if (error) {
+    return (
+      <MobileSectionCard title="Research" subtitle="Failed to load">
+        <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+          {error}
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  return (
+    <ArtifactPanel
+      group={group}
+      sessionId={sessionId}
+      title="Research"
+      emptyMessage="Research notes, references, and supporting files."
+    />
+  );
+}
+
+function FilesPanel({ sessionId }: { sessionId: string }) {
+  const { artifacts, loading, error } = useSessionArtifacts(sessionId);
+  const group = getArtifactGroupByPath(artifacts, 'files');
+
+  if (loading) {
+    return (
+      <MobileSectionCard title="Files" subtitle="Loading file data...">
+        <div className="flex items-center justify-center py-8">
+          <LoadingSpinner />
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  if (error) {
+    return (
+      <MobileSectionCard title="Files" subtitle="Failed to load">
+        <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+          {error}
+        </div>
+      </MobileSectionCard>
+    );
+  }
+
+  return (
+    <ArtifactPanel
+      group={group}
+      sessionId={sessionId}
+      title="Files"
+      emptyMessage="Additional files and documents from the session."
+    />
+  );
+}
+
 interface StickySummaryBarProps {
   session: SessionDetail;
   activeSection: DetailSectionId;
   onSectionChange: (section: DetailSectionId) => void;
   showBackLinks?: boolean;
+  artifactCounts?: {
+    checkpoints: number;
+    research: number;
+    files: number;
+  };
 }
 
-function StickySummaryBar({ session, activeSection, onSectionChange, showBackLinks }: StickySummaryBarProps) {
+function StickySummaryBar({ session, activeSection, onSectionChange, showBackLinks, artifactCounts }: StickySummaryBarProps) {
   const state = getMobileSessionState(session);
   const projectName = getProjectName(session.projectPath);
   const todos = session.todos ?? [];
@@ -1006,6 +1281,9 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
   const doneTodos = todos.filter((t) => t.status === 'done' || t.status === 'completed').length;
 
   const workSurfaceCount = (session.isPlanPending || session.planContent ? 1 : 0) + todos.length;
+  const checkpointsCount = artifactCounts?.checkpoints ?? 0;
+  const researchCount = artifactCounts?.research ?? 0;
+  const filesCount = artifactCounts?.files ?? 0;
 
   const getStateAccentColor = () => {
     if (session.needsAttention) return 'bg-gh-attention';
@@ -1136,12 +1414,15 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
             { id: 'activity' as const, label: 'Activity', count: session.messages.length },
             { id: 'work' as const, label: 'Work', count: workSurfaceCount },
             { id: 'agents' as const, label: 'Agents', count: session.activeSubAgents.length },
+            { id: 'checkpoints' as const, label: 'Checkpoints', count: checkpointsCount },
+            { id: 'research' as const, label: 'Research', count: researchCount },
+            { id: 'files' as const, label: 'Files', count: filesCount },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => onSectionChange(tab.id)}
-              className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap min-h-[44px] ${
                 activeSection === tab.id
                   ? 'bg-gh-accent text-white'
                   : 'border border-gh-border bg-gh-bg text-gh-muted hover:bg-gh-surface hover:text-gh-text'
@@ -1170,6 +1451,21 @@ interface MobileSessionPaneInnerProps {
 function MobileSessionPaneInner({ session, showBackLinks = false, error }: MobileSessionPaneInnerProps) {
   const [activeSection, setActiveSection] = useState<DetailSectionId>('overview');
   const [activeStreamId, setActiveStreamId] = useState('main');
+  
+  // Fetch artifacts for badge counts and panel content
+  const { artifacts } = useSessionArtifacts(session.id);
+  const artifactCounts = useMemo(() => {
+    const checkpointsGroup = getArtifactGroupByPath(artifacts, 'checkpoints');
+    const researchGroup = getArtifactGroupByPath(artifacts, 'research');
+    const filesGroup = getArtifactGroupByPath(artifacts, 'files');
+    
+    return {
+      checkpoints: checkpointsGroup?.entries ? collectArtifactFiles(checkpointsGroup.entries).length : 0,
+      research: researchGroup?.entries ? collectArtifactFiles(researchGroup.entries).length : 0,
+      files: filesGroup?.entries ? collectArtifactFiles(filesGroup.entries).length : 0,
+    };
+  }, [artifacts]);
+  
   const streams = useMemo<MessageStream[]>(
     () =>
       session
@@ -1237,6 +1533,7 @@ function MobileSessionPaneInner({ session, showBackLinks = false, error }: Mobil
         activeSection={activeSection}
         onSectionChange={setActiveSection}
         showBackLinks={showBackLinks}
+        artifactCounts={artifactCounts}
       />
 
       {/* Content area */}
@@ -1314,6 +1611,9 @@ function MobileSessionPaneInner({ session, showBackLinks = false, error }: Mobil
         ) : null}
         {activeSection === 'work' ? <WorkPanel session={session} todos={todos} /> : null}
         {activeSection === 'agents' ? <AgentsPanel session={session} onOpenThread={handleOpenThread} /> : null}
+        {activeSection === 'checkpoints' ? <CheckpointsPanel sessionId={session.id} /> : null}
+        {activeSection === 'research' ? <ResearchPanel sessionId={session.id} /> : null}
+        {activeSection === 'files' ? <FilesPanel sessionId={session.id} /> : null}
       </div>
     </section>
   );
