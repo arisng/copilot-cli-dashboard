@@ -38,6 +38,7 @@ import type {
   TodoItem,
 } from '../../api/client.ts';
 import { isImageFile } from '../../utils/fileUtils.ts';
+import { FileTree } from './FileTree.tsx';
 import {
   type MessageFilterState,
   DEFAULT_MESSAGE_FILTER_STATE,
@@ -671,83 +672,6 @@ function DetailPanelHeader({
   );
 }
 
-function ArtifactEntryTree({
-  entry,
-  selectedPath,
-  onSelectFile,
-}: {
-  entry: SessionArtifactEntry;
-  selectedPath: string;
-  onSelectFile: (path: string) => void;
-}) {
-  const isFolder = entry.kind === 'directory';
-  const isSelected = !isFolder && entry.path === selectedPath;
-  const isImage = !isFolder && isImageFile(entry.name);
-
-  return (
-    <li className="rounded-lg border border-gh-border/70 bg-gh-bg/60 px-3 py-2">
-      <div className="flex items-start gap-2">
-        <span
-          className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${
-            isFolder ? 'bg-gh-accent/12 text-gh-accent' : isSelected ? 'bg-gh-active/15 text-gh-active' : 'bg-gh-border/70 text-gh-muted'
-          }`}
-        >
-          {isFolder ? '▸' : isImage ? '🖼' : '•'}
-        </span>
-        <div className="min-w-0 flex-1">
-          {isFolder ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="truncate text-sm font-medium text-gh-text">{entry.name}</span>
-              <span className="rounded-full border border-gh-border bg-gh-surface px-2 py-0.5 text-[11px] text-gh-muted">
-                folder
-              </span>
-              <span className="text-[11px] text-gh-muted">
-                {formatBytes(entry.sizeBytes)}
-              </span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onSelectFile(entry.path)}
-              className={`flex w-full flex-wrap items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-surface ${
-                isSelected
-                  ? 'border-gh-accent/40 bg-gh-accent/10 text-gh-text'
-                  : 'border-transparent bg-transparent text-gh-muted hover:border-gh-border hover:bg-gh-surface/60 hover:text-gh-text'
-              }`}
-            >
-              <span className="truncate text-sm font-medium">{entry.name}</span>
-              <span className={`rounded-full border border-gh-border bg-gh-surface px-2 py-0.5 text-[11px] ${isImage ? 'text-gh-accent' : 'text-gh-muted'}`}>
-                {isImage ? 'image' : 'file'}
-              </span>
-              <span className="text-[11px] text-gh-muted">
-                {formatBytes(entry.sizeBytes)}
-              </span>
-            </button>
-          )}
-          <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gh-muted">
-            <span className="font-mono">{entry.path}</span>
-            <span>·</span>
-            <span>{new Date(entry.modifiedAt).toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-
-      {entry.children && entry.children.length > 0 && (
-        <ul className="mt-2 space-y-2 pl-2">
-          {entry.children.map((child) => (
-            <ArtifactEntryTree
-              key={`${entry.path}/${child.name}`}
-              entry={child}
-              selectedPath={selectedPath}
-              onSelectFile={onSelectFile}
-            />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
 function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup; sessionId: string }) {
   const files = useMemo(() => collectArtifactFiles(group.entries ?? []), [group.entries]);
   const [selectedPath, setSelectedPath] = useState(files[0]?.path ?? '');
@@ -796,16 +720,11 @@ function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup;
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(16rem,18rem)_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto border-r border-gh-border bg-gh-surface/20 p-3">
             {files.length > 0 ? (
-              <ul className="space-y-2">
-                {group.entries?.map((entry) => (
-                  <ArtifactEntryTree
-                    key={entry.path}
-                    entry={entry}
-                    selectedPath={selectedPath}
-                    onSelectFile={setSelectedPath}
-                  />
-                ))}
-              </ul>
+              <FileTree
+                entries={group.entries ?? []}
+                selectedPath={selectedPath}
+                onSelectFile={setSelectedPath}
+              />
             ) : (
               <div className="rounded-xl border border-dashed border-gh-border bg-gh-bg/50 p-4 text-sm text-gh-muted">
                 No text files were found in this artifact group.
