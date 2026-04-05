@@ -47,6 +47,7 @@ This index links Diátaxis-organized documentation for the workspace.
 - [About the Dashboard Architecture](explanation/dashboard/how-it-works.md)
 - [File Tree Component Design](explanation/dashboard/file-tree-component-design.md)
 - [Session Overview Column Design](explanation/dashboard/session-overview-column-design.md)
+- [Session Sidebar Column Design](explanation/dashboard/session-sidebar-column-design.md)
 - [Todo Sorting Design](explanation/dashboard/todo-sorting-design.md)
 
 
