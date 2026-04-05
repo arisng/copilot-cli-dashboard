@@ -12,6 +12,7 @@ export interface ActiveSubAgent {
   description?: string;
   isCompleted: boolean;
   sessionId?: string;
+  lastActivityAt?: string;
 }
 
 export type SessionUsageMetricSource =

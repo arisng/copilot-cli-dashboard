@@ -1103,29 +1103,17 @@ function ThreadListItem({
           : 'border-gh-border bg-gh-bg/70 text-gh-muted hover:border-gh-border hover:text-gh-text'
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-medium">
-              {agent.agentDisplayName || agent.agentName}
-            </p>
-            <span className="shrink-0 rounded bg-gh-bg border border-gh-border px-1.5 py-0.5 text-[10px] font-mono text-gh-muted/80">
-              {agent.agentId}
-            </span>
-          </div>
-          {agent.description && (
-            <p className="mt-1 line-clamp-2 text-xs leading-5 text-gh-muted/90">
-              {agent.description}
-            </p>
-          )}
-        </div>
-        <span
-          className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
-            agent.isCompleted ? 'bg-gh-muted' : 'bg-gh-active animate-pulse'
-          }`}
-          aria-hidden="true"
-        />
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-sm font-medium text-gh-text">
+          {agent.agentId}
+        </span>
+        {agent.lastActivityAt && (
+          <RelativeTime timestamp={agent.lastActivityAt} />
+        )}
       </div>
+      <p className="mt-1 line-clamp-2 text-xs leading-5 text-gh-muted/90">
+        {agent.description || 'No description'}
+      </p>
     </button>
   );
 }
@@ -1157,23 +1145,34 @@ function ThreadExplorer({
       return searchable.includes(normalized);
     });
   }, [subAgents, threadSearch]);
-  const hasMatchingThreads = filteredThreads.length > 0;
-  const runningThreads = filteredThreads.filter((agent) => !agent.isCompleted);
-  const completedThreads = filteredThreads.filter((agent) => agent.isCompleted);
+
+  // Sort by lastActivityAt descending (most recent first), then by toolCallId for stable sort
+  const sortedThreads = useMemo(() => {
+    return [...filteredThreads].sort((a, b) => {
+      const timeA = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
+      const timeB = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      return a.toolCallId.localeCompare(b.toolCallId);
+    });
+  }, [filteredThreads]);
+
+  const hasMatchingThreads = sortedThreads.length > 0;
   const selectedThread = hasMatchingThreads
-    ? subAgents.find((agent) => agent.toolCallId === selectedThreadId) ?? filteredThreads[0] ?? subAgents[0] ?? null
+    ? subAgents.find((agent) => agent.toolCallId === selectedThreadId) ?? sortedThreads[0] ?? subAgents[0] ?? null
     : null;
   const selectedMessages = selectedThread ? session.subAgentMessages?.[selectedThread.toolCallId] ?? [] : [];
 
   useEffect(() => {
-    if (filteredThreads.length === 0) {
+    if (sortedThreads.length === 0) {
       return;
     }
 
-    if (!filteredThreads.some((agent) => agent.toolCallId === selectedThreadId)) {
-      onThreadChange(filteredThreads[0].toolCallId);
+    if (!sortedThreads.some((agent) => agent.toolCallId === selectedThreadId)) {
+      onThreadChange(sortedThreads[0].toolCallId);
     }
-  }, [filteredThreads, onThreadChange, selectedThreadId]);
+  }, [sortedThreads, onThreadChange, selectedThreadId]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1190,49 +1189,25 @@ function ThreadExplorer({
             />
           </label>
 
-          <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-gh-muted">Running</h3>
-                <span className="text-[11px] text-gh-muted">{runningThreads.length}</span>
-              </div>
-              <div className="space-y-2">
-                {runningThreads.map((agent) => (
-                  <ThreadListItem
-                    key={agent.toolCallId}
-                    agent={agent}
-                    isSelected={agent.toolCallId === selectedThread?.toolCallId}
-                    onSelect={onThreadChange}
-                  />
-                ))}
-                {runningThreads.length === 0 && (
-                  <p className="rounded-lg border border-dashed border-gh-border bg-gh-bg/60 px-3 py-3 text-xs text-gh-muted">
-                    No running threads match the current search.
-                  </p>
-                )}
-              </div>
+          <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gh-muted">Threads</h3>
+              <span className="text-[11px] text-gh-muted">{sortedThreads.length}</span>
             </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-gh-muted">Done</h3>
-                <span className="text-[11px] text-gh-muted">{completedThreads.length}</span>
-              </div>
-              <div className="space-y-2">
-                {completedThreads.map((agent) => (
-                  <ThreadListItem
-                    key={agent.toolCallId}
-                    agent={agent}
-                    isSelected={agent.toolCallId === selectedThread?.toolCallId}
-                    onSelect={onThreadChange}
-                  />
-                ))}
-                {completedThreads.length === 0 && (
-                  <p className="rounded-lg border border-dashed border-gh-border bg-gh-bg/60 px-3 py-3 text-xs text-gh-muted">
-                    No completed threads match the current search.
-                  </p>
-                )}
-              </div>
+            <div className="space-y-2">
+              {sortedThreads.map((agent) => (
+                <ThreadListItem
+                  key={agent.toolCallId}
+                  agent={agent}
+                  isSelected={agent.toolCallId === selectedThread?.toolCallId}
+                  onSelect={onThreadChange}
+                />
+              ))}
+              {sortedThreads.length === 0 && (
+                <p className="rounded-lg border border-dashed border-gh-border bg-gh-bg/60 px-3 py-3 text-xs text-gh-muted">
+                  No threads match the current search.
+                </p>
+              )}
             </div>
           </div>
         </section>
