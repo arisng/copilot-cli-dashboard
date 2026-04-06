@@ -1526,8 +1526,8 @@ function MobileSessionPaneInner({ session, showBackLinks = false, error }: Mobil
   };
 
   return (
-    <section className="relative pb-6">
-      {/* Sticky summary bar */}
+    <section className="relative px-3 pb-6">
+      {/* Sticky summary bar - uses negative margins to bleed to edges */}
       <StickySummaryBar
         session={session}
         activeSection={activeSection}
@@ -1538,68 +1538,70 @@ function MobileSessionPaneInner({ session, showBackLinks = false, error }: Mobil
 
       {/* Content area */}
       <div className="mt-4 space-y-4">
-        {/* Header card with session details */}
-        <div className="rounded-2xl border border-gh-border bg-gradient-to-br from-gh-surface to-gh-bg p-4 shadow-sm">
-          <div className={`rounded-2xl border p-3 ${callout.toneClass}`}>
-            <p className="text-[11px] uppercase tracking-[0.22em] opacity-80">Now</p>
-            <p className="mt-2 text-sm font-semibold text-gh-text">{callout.title}</p>
-            <p className="mt-1 text-sm leading-relaxed text-gh-muted">{callout.description}</p>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              {todos.length > 0 ? (
-                <span className="rounded-full border border-gh-border/70 bg-gh-bg/70 px-2.5 py-1 text-[11px] text-gh-text">
-                  {pluralize(todos.length, 'todo')}
-                </span>
-              ) : null}
-              {activeAgents > 0 ? (
-                <span className="rounded-full border border-gh-active/30 bg-gh-active/10 px-2.5 py-1 text-[11px] text-gh-active">
-                  {pluralize(activeAgents, 'active sub-agent', 'active sub-agents')}
-                </span>
-              ) : null}
-              {completedAgents > 0 ? (
-                <span className="rounded-full border border-gh-border bg-gh-bg px-2.5 py-1 text-[11px] text-gh-muted">
-                  {pluralize(completedAgents, 'completed sub-agent', 'completed sub-agents')}
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <MobileInfoCard
-              label="Last activity"
-              value={<RelativeTime timestamp={session.lastActivityAt} className="text-sm text-gh-text" />}
-            />
-            <MobileInfoCard label="Duration" value={formatDuration(session.durationMs)} />
-            <MobileInfoCard label="Messages" value={session.messages.length} />
-            <MobileInfoCard label="Sub-agents" value={session.activeSubAgents.length} />
-          </div>
-
-          {showBackLinks ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link
-                to="/m"
-                className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
-              >
-                Back to sessions
-              </Link>
-              <Link
-                to={`/sessions/${session.id}`}
-                className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
-              >
-                Open desktop detail
-              </Link>
-            </div>
-          ) : null}
-        </div>
-
-        {error ? (
-          <div className="rounded-2xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
-            Live updates are temporarily failing: {error}
-          </div>
-        ) : null}
-
         {activeSection === 'overview' ? (
-          <OverviewPanel session={session} projectName={projectName} todos={todos} onNavigate={setActiveSection} />
+          <>
+            {/* Header card with session details - only visible in Overview tab */}
+            <div className="rounded-2xl border border-gh-border bg-gradient-to-br from-gh-surface to-gh-bg p-4 shadow-sm">
+              <div className={`rounded-2xl border p-3 ${callout.toneClass}`}>
+                <p className="text-[11px] uppercase tracking-[0.22em] opacity-80">Now</p>
+                <p className="mt-2 text-sm font-semibold text-gh-text">{callout.title}</p>
+                <p className="mt-1 text-sm leading-relaxed text-gh-muted">{callout.description}</p>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {todos.length > 0 ? (
+                    <span className="rounded-full border border-gh-border/70 bg-gh-bg/70 px-2.5 py-1 text-[11px] text-gh-text">
+                      {pluralize(todos.length, 'todo')}
+                    </span>
+                  ) : null}
+                  {activeAgents > 0 ? (
+                    <span className="rounded-full border border-gh-active/30 bg-gh-active/10 px-2.5 py-1 text-[11px] text-gh-active">
+                      {pluralize(activeAgents, 'active sub-agent', 'active sub-agents')}
+                    </span>
+                  ) : null}
+                  {completedAgents > 0 ? (
+                    <span className="rounded-full border border-gh-border bg-gh-bg px-2.5 py-1 text-[11px] text-gh-muted">
+                      {pluralize(completedAgents, 'completed sub-agent', 'completed sub-agents')}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <MobileInfoCard
+                  label="Last activity"
+                  value={<RelativeTime timestamp={session.lastActivityAt} className="text-sm text-gh-text" />}
+                />
+                <MobileInfoCard label="Duration" value={formatDuration(session.durationMs)} />
+                <MobileInfoCard label="Messages" value={session.messages.length} />
+                <MobileInfoCard label="Sub-agents" value={session.activeSubAgents.length} />
+              </div>
+
+              {showBackLinks ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    to="/m"
+                    className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+                  >
+                    Back to sessions
+                  </Link>
+                  <Link
+                    to={`/sessions/${session.id}`}
+                    className="inline-flex items-center rounded-xl border border-gh-border bg-gh-bg px-3 py-2 text-xs font-medium text-gh-text transition-colors hover:border-gh-accent/40 hover:text-gh-accent"
+                  >
+                    Open desktop detail
+                  </Link>
+                </div>
+              ) : null}
+            </div>
+
+            {error ? (
+              <div className="rounded-2xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
+                Live updates are temporarily failing: {error}
+              </div>
+            ) : null}
+
+            <OverviewPanel session={session} projectName={projectName} todos={todos} onNavigate={setActiveSection} />
+          </>
         ) : null}
         {activeSection === 'activity' ? (
           <ActivityPanel
