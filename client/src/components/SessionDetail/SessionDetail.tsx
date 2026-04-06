@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
 import { useSession } from '../../hooks/useSession.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import {
@@ -58,9 +58,9 @@ type SessionDbViewMode = 'graph' | 'table';
 
 const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = [
   { value: 'main', label: 'Main session' },
+  { value: 'threads', label: 'Sub-agent threads' },
   { value: 'plan', label: 'Plan' },
   { value: 'todos', label: 'Todos' },
-  { value: 'threads', label: 'Sub-agent threads' },
   { value: 'checkpoints', label: 'Checkpoints' },
   { value: 'research', label: 'Research' },
   { value: 'files', label: 'Files' },
@@ -69,9 +69,9 @@ const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = 
 
 const DETAIL_VIEW_DESCRIPTIONS: Partial<Record<SessionDetailView, string>> = {
   main: 'Primary conversation stream for the session.',
+  threads: 'Sub-agent conversations with grouped selection.',
   plan: 'Captured plan content and execution guardrails.',
   todos: 'Work items with dependency and status tracking.',
-  threads: 'Sub-agent conversations with grouped selection.',
   checkpoints: 'Captured checkpoint files and snapshots.',
   research: 'Research notes, references, and supporting files.',
   files: 'Additional files and documents from the session.',
@@ -470,6 +470,13 @@ function TodosView({ todos }: { todos: TodoItem[] }) {
                   {isExpanded && (
                     <div className="px-3 pb-3 border-t border-gh-border/50 pt-2 space-y-2">
                       <p className="text-xs text-gh-muted leading-relaxed">{todo.description}</p>
+                      <div className="flex items-center gap-2 text-[11px] text-gh-muted/70">
+                        <span>Created:</span>
+                        <RelativeTime timestamp={todo.createdAt} />
+                        <span className="text-gh-muted/40">·</span>
+                        <span>Updated:</span>
+                        <RelativeTime timestamp={todo.updatedAt} />
+                      </div>
                       {todo.dependsOn.length > 0 && (
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-xs text-gh-muted">Depends on:</span>
@@ -577,11 +584,38 @@ function DetailPanelHeader({
     'session-db': dbViewMode === 'graph' ? 'Todo dependency graph' : 'Session DB table preview',
   };
 
-  const descriptionByView: Partial<Record<SessionDetailView, string>> = {
-    main: `${pluralize(session.messageCount, 'message')} in the primary conversation.`,
-    plan: session.isPlanPending
-      ? 'Review the captured plan before execution continues.'
-      : 'Captured plan content available for reference.',
+  // Get the last message timestamp for the main view
+  const lastMessage = session.messages.length > 0
+    ? session.messages[session.messages.length - 1]
+    : null;
+
+  const descriptionByView: Partial<Record<SessionDetailView, ReactNode>> = {
+    main: (
+      <>
+        {pluralize(session.messageCount, 'message')} in the primary conversation
+        {lastMessage && (
+          <>
+            {' · Last message '}
+            <RelativeTime timestamp={lastMessage.timestamp} />
+          </>
+        )}
+        .
+      </>
+    ),
+    plan: (() => {
+      const planGroup = getArtifactGroupByPath(artifacts, 'plan.md');
+      const planModifiedAt = planGroup?.modifiedAt;
+      const baseText = session.isPlanPending
+        ? 'Review the captured plan before execution continues.'
+        : 'Captured plan content available for reference.';
+      if (!planModifiedAt) return baseText;
+      return (
+        <>
+          {baseText}{' '}
+          <span className="text-gh-muted/70">(last updated <RelativeTime timestamp={planModifiedAt} />)</span>
+        </>
+      );
+    })(),
     todos: todos.length > 0
       ? `${pluralize(activeTodos, 'active todo')} · ${pluralize(blockedTodos, 'blocked todo')} · ${completedTodos}/${todos.length} done`
       : 'No todos are recorded for this session yet.',
@@ -724,6 +758,7 @@ function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup;
                 entries={group.entries ?? []}
                 selectedPath={selectedPath}
                 onSelectFile={setSelectedPath}
+                showTimestamps
               />
             ) : (
               <div className="rounded-xl border border-dashed border-gh-border bg-gh-bg/50 p-4 text-sm text-gh-muted">
@@ -1113,7 +1148,19 @@ function ThreadListItem({
           </span>
         )}
       </div>
-      <p className="mt-1 line-clamp-2 text-xs leading-5 text-gh-muted/90">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {agent.agentName && (
+          <span className="rounded-full border border-gh-border bg-gh-surface/50 px-1.5 py-0.5 text-[10px] font-medium text-gh-muted">
+            {agent.agentName}
+          </span>
+        )}
+        {agent.model && (
+          <span className="rounded-full border border-gh-border bg-gh-surface/50 px-1.5 py-0.5 text-[10px] font-medium text-gh-muted">
+            {agent.model}
+          </span>
+        )}
+      </div>
+      <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-gh-muted/90">
         {agent.description || 'No description'}
       </p>
     </button>

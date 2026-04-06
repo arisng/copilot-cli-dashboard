@@ -1,11 +1,13 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { SessionArtifactEntry } from '../../api/client.ts';
 import { isImageFile, isCodeFile, isDocFile, isArchiveFile, formatBytes } from '../../utils/fileUtils.ts';
+import { RelativeTime } from '../shared/RelativeTime.tsx';
 
 interface FileTreeProps {
   entries: SessionArtifactEntry[];
   selectedPath: string;
   onSelectFile: (path: string) => void;
+  showTimestamps?: boolean;
 }
 
 interface FileTreeItemProps {
@@ -15,6 +17,7 @@ interface FileTreeItemProps {
   expandedPaths: Set<string>;
   onToggleExpand: (path: string) => void;
   depth?: number;
+  showTimestamps?: boolean;
 }
 
 /**
@@ -60,6 +63,7 @@ function FileTreeItem({
   expandedPaths,
   onToggleExpand,
   depth = 0,
+  showTimestamps = false,
 }: FileTreeItemProps) {
   const isFolder = entry.kind === 'directory';
   const isSelected = !isFolder && entry.path === selectedPath;
@@ -162,11 +166,18 @@ function FileTreeItem({
           </div>
         </div>
 
-        {/* Size for files */}
+        {/* Size and timestamp for files */}
         {!isFolder && (
-          <span className="shrink-0 text-[10px] text-gh-muted/60">
-            {formatBytes(entry.sizeBytes)}
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            {showTimestamps && entry.modifiedAt && (
+              <span className="text-[10px] text-gh-muted/50">
+                <RelativeTime timestamp={entry.modifiedAt} />
+              </span>
+            )}
+            <span className="text-[10px] text-gh-muted/60">
+              {formatBytes(entry.sizeBytes)}
+            </span>
+          </div>
         )}
       </div>
 
@@ -182,6 +193,7 @@ function FileTreeItem({
               expandedPaths={expandedPaths}
               onToggleExpand={onToggleExpand}
               depth={depth + 1}
+              showTimestamps={showTimestamps}
             />
           ))}
         </div>
@@ -193,7 +205,7 @@ function FileTreeItem({
 /**
  * FileTree component with collapsible folder support
  */
-export function FileTree({ entries, selectedPath, onSelectFile }: FileTreeProps) {
+export function FileTree({ entries, selectedPath, onSelectFile, showTimestamps = false }: FileTreeProps) {
   // Track expanded folder paths
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
     // Start with all folders expanded
@@ -285,6 +297,7 @@ export function FileTree({ entries, selectedPath, onSelectFile }: FileTreeProps)
               expandedPaths={expandedPaths}
               onToggleExpand={handleToggleExpand}
               depth={0}
+              showTimestamps={showTimestamps}
             />
           ))}
         </div>
