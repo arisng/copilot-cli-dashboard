@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import type { ActiveSubAgent } from '../../api/client.ts';
 
 const MAX_PRIMARY_TABS = 8;
@@ -7,7 +7,7 @@ const MAX_PRIMARY_TABS = 8;
 export interface SessionDetailTab {
   id: string;
   label: string;
-  description?: string;
+  description?: ReactNode;
   isCompleted?: boolean;
   isSubAgent: boolean;
   isArtifact?: boolean;
