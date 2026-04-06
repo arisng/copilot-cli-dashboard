@@ -1890,89 +1890,26 @@ export function SessionDetail() {
 
   const detailTabs: SessionDetailTab[] = availableViews.map((option) => {
     const descriptionByValue: Record<SessionDetailView, ReactNode> = {
-      main: (
-        <>
-          {pluralize(session.messageCount, 'message')} in the primary conversation
-          {lastMessage && (
-            <>
-              {' · Last message '}
-              <RelativeTime timestamp={lastMessage.timestamp} />
-            </>
-          )}
-        </>
-      ),
+      main: lastMessage ? <RelativeTime timestamp={lastMessage.timestamp} /> : null,
       plan: (() => {
         const planGroup = getArtifactGroupByPath(artifacts, 'plan.md');
         const planModifiedAt = planGroup?.modifiedAt;
-        const baseText = session.isPlanPending
-          ? 'Plan approval is pending before execution continues.'
-          : 'Captured plan content available for reference.';
-        if (!planModifiedAt) return baseText;
-        return (
-          <>
-            {baseText}{' '}
-            <span className="text-gh-muted/70">(last updated <RelativeTime timestamp={planModifiedAt} />)</span>
-          </>
-        );
+        return planModifiedAt ? <RelativeTime timestamp={planModifiedAt} /> : null;
       })(),
-      todos: hasTodos ? (
-        <>
-          {activeTodos} active · {blockedTodos} blocked · {completedTodos}/{session.todos?.length ?? 0} done
-          {lastUpdatedTodo && (
-            <>
-              {' · Last updated '}
-              <RelativeTime timestamp={lastUpdatedTodo.updatedAt} />
-            </>
-          )}
-        </>
-      ) : (
-        'No todos are recorded for this session yet.'
-      ),
-      threads: (
-        <>
-          {activeThreadCount} running · {completedThreadCount} done
-          {subAgents.length > 0 && (
-            <>
-              {' · Last activity '}
-              <RelativeTime timestamp={subAgents.sort((a, b) => {
-                const timeA = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
-                const timeB = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
-                return timeB - timeA;
-              })[0].lastActivityAt || session.lastActivityAt} />
-            </>
-          )}
-        </>
-      ),
-      checkpoints: checkpointGroup?.status === 'ok' ? (
-        <>
-          {checkpointFiles.length} checkpoint file{checkpointFiles.length === 1 ? '' : 's'} available
-          {lastCheckpointFile && (
-            <>
-              {' · Last file '}
-              <RelativeTime timestamp={lastCheckpointFile.modifiedAt} />
-            </>
-          )}
-        </>
-      ) : (
-        'Checkpoint artifacts from this session.'
-      ),
-      research: researchGroup?.status === 'ok' ? (
-        <>
-          {researchFiles.length} research file{researchFiles.length === 1 ? '' : 's'} available
-          {lastResearchFile && (
-            <>
-              {' · Last file '}
-              <RelativeTime timestamp={lastResearchFile.modifiedAt} />
-            </>
-          )}
-        </>
-      ) : (
-        'Research artifacts from this session.'
-      ),
+      todos: lastUpdatedTodo ? <RelativeTime timestamp={lastUpdatedTodo.updatedAt} /> : null,
+      threads: subAgents.length > 0 ? (
+        <RelativeTime timestamp={subAgents.sort((a, b) => {
+          const timeA = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
+          const timeB = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
+          return timeB - timeA;
+        })[0].lastActivityAt || session.lastActivityAt} />
+      ) : null,
+      checkpoints: lastCheckpointFile ? <RelativeTime timestamp={lastCheckpointFile.modifiedAt} /> : null,
+      research: lastResearchFile ? <RelativeTime timestamp={lastResearchFile.modifiedAt} /> : null,
       files: filesGroup?.status === 'ok'
-        ? `${collectArtifactFiles(filesGroup.entries ?? []).length} files available.`
-        : 'Additional files from this session.',
-      'session-db': 'Todo dependency graph with table preview fallback.',
+        ? `${collectArtifactFiles(filesGroup.entries ?? []).length} files`
+        : 'No files',
+      'session-db': null,
     };
 
     return {
