@@ -1310,7 +1310,7 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
   };
 
   return (
-    <div className="sticky top-0 z-20 -mx-3 border-b border-gh-border bg-gh-surface px-3 py-3">
+    <div className="relative sticky top-0 z-20 -mx-3 border-b border-gh-border bg-gh-surface px-3 py-3">
       {/* Primary row: Status + Title + Actions */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">

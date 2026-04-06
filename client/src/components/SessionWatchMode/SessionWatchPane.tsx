@@ -48,22 +48,25 @@ export function SessionWatchPane({ sessionId }: SessionWatchPaneProps) {
   }
 
   return (
-    <div className="relative space-y-4 pb-6">
+    <div className="relative -mx-3 -mt-3 h-full">
+      {/* Close button positioned outside the scroll area */}
       <button
         type="button"
         onClick={handleClose}
         title="Remove pane"
         aria-label={`Remove ${session.title} from watch mode`}
-        className="absolute right-0 top-0 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border border-gh-border bg-gh-surface text-xs font-medium text-gh-muted transition-colors hover:border-gh-attention/40 hover:text-gh-attention"
+        className="absolute right-2 top-2 z-30 inline-flex h-7 w-7 items-center justify-center rounded-full border border-gh-border bg-gh-surface text-xs font-medium text-gh-muted transition-colors hover:border-gh-attention/40 hover:text-gh-attention"
       >
         ×
       </button>
-      <MobileSessionPaneInner session={session} />
-      {error ? (
-        <div className="rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-3 text-xs text-gh-attention">
-          Live updates are temporarily failing: {error}
-        </div>
-      ) : null}
+      <div className="h-full overflow-y-auto">
+        <MobileSessionPaneInner session={session} />
+        {error ? (
+          <div className="mx-3 mb-4 rounded-xl border border-gh-attention/30 bg-gh-attention/10 p-3 text-xs text-gh-attention">
+            Live updates are temporarily failing: {error}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
