@@ -722,7 +722,7 @@ function ActivityPanel({
       </MobileSectionCard>
 
       {isMainStream && (
-        <div className="rounded-2xl border border-gh-border bg-gh-surface p-0 overflow-hidden">
+        <div className="rounded-2xl border border-gh-border bg-gh-surface p-0">
           <MessageFilterBar
             filters={filters}
             onChange={setFilters}
