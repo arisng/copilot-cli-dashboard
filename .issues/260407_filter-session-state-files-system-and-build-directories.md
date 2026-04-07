@@ -1,7 +1,7 @@
 ---
 title: "Filter system and build directories from session-state file browser"
 type: "Task"
-status: "Open"
+status: "Closed"
 author: "Copilot"
 created: "2026-04-07"
 priority: "High"
