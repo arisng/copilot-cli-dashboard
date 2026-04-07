@@ -73,6 +73,7 @@ const SESSION_ARTIFACT_SECTIONS: SessionArtifactSectionName[] = ['checkpoints', 
 
 const ALLOWED_ARTIFACT_PREFIXES = ['files/', 'checkpoints/', 'research/', 'plan.md'];
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+const EXCLUDED_DIRECTORY_NAMES = ['node_modules', 'bin', 'obj', 'dist', 'build', '.git', '.svn', '.hg', '.next', '.nuxt', 'out', 'coverage', '.cache', 'tmp', 'temp'];
 
 export function isImageFile(fileName: string): boolean {
   const lowerName = fileName.toLowerCase();
@@ -706,9 +707,14 @@ function toSessionArtifactPath(sessionDir: string, itemPath: string): string {
   return relativePath.split(path.sep).join('/');
 }
 
+function isExcludedDirectory(name: string): boolean {
+  return EXCLUDED_DIRECTORY_NAMES.includes(name);
+}
+
 function readSessionArtifactEntries(directoryPath: string, sessionDir: string): SessionArtifactEntry[] {
   const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
   return entries
+    .filter((entry) => !entry.isDirectory() || !isExcludedDirectory(entry.name))
     .map((entry) => {
       const fullPath = path.join(directoryPath, entry.name);
       const stat = fs.statSync(fullPath);
