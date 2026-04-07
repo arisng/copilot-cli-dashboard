@@ -41,6 +41,27 @@ function getPromptSummary(session: SessionDetail) {
   return condensed.length > 220 ? `${condensed.slice(0, 217)}...` : condensed;
 }
 
+function getLatestMessage(session: SessionDetail) {
+  const relevantMessages = session.messages.filter(
+    (message) => (message.role === 'user' || message.role === 'assistant') && message.content.trim()
+  );
+  
+  if (relevantMessages.length === 0) {
+    return 'No messages yet.';
+  }
+  
+  const latest = relevantMessages.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  )[0];
+  
+  const condensed = latest.content
+    .replace(/```[\s\S]*?```/g, ' code block ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  return condensed.length > 220 ? `${condensed.slice(0, 217)}...` : condensed;
+}
+
 function getSessionCallout(session: SessionDetail, todoCount: number, activeAgents: number, completedAgents: number) {
   if (session.needsAttention) {
     return {
@@ -233,8 +254,8 @@ export function SessionMeta({ session }: Props) {
   const doneTodos = todos.filter((todo) => isDone(todo.status)).length;
   const activeAgents = session.activeSubAgents.filter((agent) => !agent.isCompleted).length;
   const completedAgents = session.activeSubAgents.length - activeAgents;
-  const callout = getSessionCallout(session, todos.length, activeAgents, completedAgents);
   const promptSummary = getPromptSummary(session);
+  const latestMessage = getLatestMessage(session);
   const signals = [
     session.needsAttention
       ? { label: 'User follow-up likely needed', tone: 'attention' as const }
@@ -313,18 +334,19 @@ export function SessionMeta({ session }: Props) {
           </div>
         </div>
 
-        {/* Status Callout Card */}
-        <div className={`rounded-xl border p-4 ${callout.toneClass}`}>
-          <p className="text-[11px] uppercase tracking-[0.22em] opacity-80">Status</p>
-          <p className="mt-2 text-lg font-semibold leading-tight">{callout.title}</p>
-          <p className="mt-1 text-sm leading-relaxed opacity-90">{callout.description}</p>
-        </div>
-
-        {/* Prompt Summary Block */}
+        {/* Initial Prompt Block */}
         <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-4">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">Prompt summary</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">INITIAL PROMPT</p>
           <p className="mt-2 text-sm leading-relaxed text-gh-text">
             {promptSummary}
+          </p>
+        </div>
+
+        {/* Latest Message Block */}
+        <div className="rounded-xl border border-gh-border bg-gh-surface/40 p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">LATEST MESSAGE</p>
+          <p className="mt-2 text-sm leading-relaxed text-gh-text">
+            {latestMessage}
           </p>
         </div>
 
