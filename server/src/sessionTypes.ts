@@ -110,6 +110,7 @@ export type SessionUsageMetricSource =
 export interface SessionSummary {
   id: string;
   title: string;
+  summary: string | null;
   projectPath: string;
   gitBranch: string | null;
   startedAt: string;

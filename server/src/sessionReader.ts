@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
 import Database from 'better-sqlite3';
+import yaml from 'js-yaml';
 import type {
   RawEvent,
   SessionStartData,
@@ -308,6 +309,29 @@ function titleFromContent(content?: string): string {
   const text = normalizeMessageText(content);
   // Allow longer titles for better sidebar display with line-clamp-2
   return text.length > 200 ? text.slice(0, 197) + '…' : text;
+}
+
+interface WorkspaceYaml {
+  summary?: string;
+  id?: string;
+  cwd?: string;
+  git_root?: string;
+  repository?: string;
+  host_type?: string;
+  branch?: string;
+  summary_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+function readWorkspaceYaml(sessionDir: string): WorkspaceYaml | null {
+  const workspaceFile = path.join(sessionDir, 'workspace.yaml');
+  try {
+    const content = fs.readFileSync(workspaceFile, 'utf8');
+    return yaml.load(content) as WorkspaceYaml;
+  } catch {
+    return null;
+  }
 }
 
 function extractTitle(messages: ParsedMessage[]): string {
@@ -1111,6 +1135,7 @@ function createStubSessionSummary(sessionId: string, now = new Date().toISOStrin
   return {
     id: sessionId,
     title: 'New',
+    summary: null,
     projectPath: 'Unknown',
     gitBranch: null,
     startedAt: now,
@@ -1364,9 +1389,13 @@ function parseSessionSummaryAtPath(sessionDir: string, sessionId: string): Sessi
     scan.lastShutdownAt,
   );
 
+  const workspace = readWorkspaceYaml(sessionDir);
+  const sessionSummary = workspace?.summary ?? null;
+
   const summary: SessionSummary = {
     id: sessionId,
-    title: titleFromContent(scan.firstUserContent),
+    title: sessionSummary ?? titleFromContent(scan.firstUserContent),
+    summary: sessionSummary,
     projectPath: scan.startData.context?.cwd ?? 'Unknown',
     gitBranch: scan.startData.context?.branch ?? null,
     startedAt: scan.startedAt,
@@ -1437,9 +1466,13 @@ function parseSessionDirAtPath(sessionDir: string, sessionId: string): SessionDe
   const isPlanPending = isOpen && hasPendingPlanApproval(events);
   const planContent = hasPlan ? fs.readFileSync(planFile, 'utf8') : undefined;
 
+  const workspace = readWorkspaceYaml(sessionDir);
+  const sessionSummary = workspace?.summary ?? null;
+
   const summary: SessionSummary = {
     id: sessionId,
-    title: extractTitle(messages),
+    title: sessionSummary ?? extractTitle(messages),
+    summary: sessionSummary,
     projectPath: startData.context?.cwd ?? 'Unknown',
     gitBranch: startData.context?.branch ?? null,
     startedAt,
