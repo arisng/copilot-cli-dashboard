@@ -3,6 +3,56 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CollapsibleMarkdown } from './CollapsibleMarkdown.js';
 import type { Components } from 'react-markdown';
+
+// ============================================================================
+// XML Tag Normalization
+// ============================================================================
+
+const KNOWN_XML_TAGS = new Set([
+  'overview',
+  'history',
+  'work_done',
+  'technical_details',
+  'section',
+]);
+
+/**
+ * Convert tag name to title case for headings
+ * e.g., 'work_done' -> 'Work Done', 'technical_details' -> 'Technical Details'
+ */
+function toTitleCase(tagName: string): string {
+  return tagName
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+/**
+ * Normalize known structural XML tags to markdown headings.
+ * Unknown tags are preserved as-is for inline rendering.
+ */
+export function normalizeXmlTags(content: string): string {
+  // Match XML-like tags with content: <tagname>...</tagname>
+  // Handle multiline content using [\s\S] instead of .
+  const tagRegex = /<([a-zA-Z_][a-zA-Z0-9_]*)>([\s\S]*?)<\/\1>/g;
+
+  return content.replace(tagRegex, (match, tagName: string, innerContent: string) => {
+    const lowerTag = tagName.toLowerCase();
+
+    if (!KNOWN_XML_TAGS.has(lowerTag)) {
+      // Unknown tag - keep as-is for inline rendering
+      return match;
+    }
+
+    if (lowerTag === 'section') {
+      // <section> just unwraps the content directly
+      return innerContent.trim();
+    }
+
+    // Known structural tags become h2 headings
+    const heading = toTitleCase(tagName);
+    return `## ${heading}\n\n${innerContent.trim()}`;
+  });
+}
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
@@ -90,13 +140,13 @@ export const desktopMarkdownComponents: Components = {
   
   // List handling with proper nesting support
   ul: ({ children, ...props }) => (
-    <ul className="space-y-1 mb-3 pl-0 list-none" {...props}>
+    <ul className="space-y-1 mb-3 pl-0 list-none [&_ul]:ml-4 [&_ol]:ml-4" {...props}>
       {children}
     </ul>
   ),
   
   ol: ({ children, ...props }) => (
-    <ol className="space-y-1.5 mb-3 pl-0 list-none counter-reset-[item]" {...props}>
+    <ol className="space-y-1.5 mb-3 pl-0 list-none counter-reset-[item] [&_ul]:ml-4 [&_ol]:ml-4" {...props}>
       {children}
     </ol>
   ),
@@ -108,6 +158,12 @@ export const desktopMarkdownComponents: Components = {
       (c) => typeof c === 'object' && c !== null && (c as React.ReactElement)?.type === 'input'
     );
     
+    // Check if this li contains nested lists (ul or ol)
+    const hasNestedList = childArr.some(
+      (c) => typeof c === 'object' && c !== null && 
+        ((c as React.ReactElement)?.type === 'ul' || (c as React.ReactElement)?.type === 'ol')
+    );
+    
     if (hasCheckbox) {
       return (
         <li className="flex items-start gap-2 text-sm text-gh-text py-0.5" {...props}>
@@ -116,7 +172,18 @@ export const desktopMarkdownComponents: Components = {
       );
     }
     
-    // Check if this is inside an ordered list by looking at parent context
+    // For items with nested lists, use block layout instead of flex to allow proper nesting
+    if (hasNestedList) {
+      return (
+        <li 
+          className="text-sm text-gh-text py-0.5 pl-4 relative before:content-['›'] before:text-gh-accent before:font-bold before:absolute before:left-0 before:top-0.5" 
+          {...props}
+        >
+          {children}
+        </li>
+      );
+    }
+    
     return (
       <li 
         className="flex items-start gap-2 text-sm text-gh-text py-0.5 before:content-['›'] before:text-gh-accent before:font-bold before:shrink-0 before:mt-px" 
@@ -506,13 +573,16 @@ export function MarkdownRenderer({
     }
   }, [variant]);
 
-  // Sanitize content to prevent XSS while preserving XML-like tags
+  // Sanitize content and normalize XML tags
   const sanitizedContent = useMemo(() => {
-    if (!sanitize) return content;
+    // First normalize XML tags to markdown
+    let processed = normalizeXmlTags(content);
+    
+    if (!sanitize) return processed;
     
     // Basic sanitization: remove script tags and dangerous attributes
     // Allow common markdown content including XML-like tags
-    return content
+    return processed
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '[Script removed]')
       .replace(/javascript:/gi, 'disabled-javascript:');
   }, [content, sanitize]);
