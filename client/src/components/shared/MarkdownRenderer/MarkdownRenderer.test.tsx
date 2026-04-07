@@ -92,6 +92,44 @@ More content`);
     });
   });
 
+  describe('code span protection', () => {
+    it('does not transform XML tags inside inline code spans', () => {
+      const input = 'Use the `<history>` tag to wrap historical data.';
+      const result = normalizeXmlTags(input);
+      expect(result).toBe('Use the `<history>` tag to wrap historical data.');
+    });
+
+    it('does not transform XML tags inside triple-backtick code blocks', () => {
+      const input = "```xml\n<history>\n  <event>Test</event>\n</history>\n```";
+      const result = normalizeXmlTags(input);
+      expect(result).toBe("```xml\n<history>\n  <event>Test</event>\n</history>\n```");
+    });
+
+    it('transforms XML tags outside code spans while preserving code spans', () => {
+      const input = '<history>Real history</history> and `<history>` as code';
+      const result = normalizeXmlTags(input);
+      expect(result).toBe('## History\n\nReal history and `<history>` as code');
+    });
+
+    it('handles multiple code spans in same content', () => {
+      const input = '`<overview>` and `<history>` are both tags';
+      const result = normalizeXmlTags(input);
+      expect(result).toBe('`<overview>` and `<history>` are both tags');
+    });
+
+    it('handles code block followed by XML tag', () => {
+      const input = "```\n<history>in code</history>\n```\n\n<history>real content</history>";
+      const result = normalizeXmlTags(input);
+      expect(result).toBe("```\n<history>in code</history>\n```\n\n## History\n\nreal content");
+    });
+
+    it('handles inline code with backticks containing XML-like content', () => {
+      const input = 'Run `<section>content</section>` to see the tag';
+      const result = normalizeXmlTags(input);
+      expect(result).toBe('Run `<section>content</section>` to see the tag');
+    });
+  });
+
   describe('multiple tags', () => {
     it('converts multiple known tags in same content', () => {
       const input = `<overview>Overview content</overview>

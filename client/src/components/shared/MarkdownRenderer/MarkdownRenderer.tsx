@@ -29,13 +29,30 @@ function toTitleCase(tagName: string): string {
 /**
  * Normalize known structural XML tags to markdown headings.
  * Unknown tags are preserved as-is for inline rendering.
+ * Skips transformation of XML-like tags inside code spans (backticks).
  */
 export function normalizeXmlTags(content: string): string {
+  // Protect code spans (inline code in backticks) from transformation
+  // Match both single-backtick and triple-backtick code blocks
+  const codeSpans: string[] = [];
+  
+  // First, extract and protect code blocks (triple backticks)
+  let protectedContent = content.replace(/```[\s\S]*?```/g, (match) => {
+    codeSpans.push(match);
+    return `\x00CODE_BLOCK_${codeSpans.length - 1}\x00`;
+  });
+  
+  // Then, extract and protect inline code spans (single backticks)
+  protectedContent = protectedContent.replace(/`[^`]+`/g, (match) => {
+    codeSpans.push(match);
+    return `\x00CODE_SPAN_${codeSpans.length - 1}\x00`;
+  });
+
   // Match XML-like tags with content: <tagname>...</tagname>
   // Handle multiline content using [\s\S] instead of .
   const tagRegex = /<([a-zA-Z_][a-zA-Z0-9_]*)>([\s\S]*?)<\/\1>/g;
 
-  return content.replace(tagRegex, (match, tagName: string, innerContent: string) => {
+  protectedContent = protectedContent.replace(tagRegex, (match, tagName: string, innerContent: string) => {
     const lowerTag = tagName.toLowerCase();
 
     if (!KNOWN_XML_TAGS.has(lowerTag)) {
@@ -51,6 +68,11 @@ export function normalizeXmlTags(content: string): string {
     // Known structural tags become h2 headings
     const heading = toTitleCase(tagName);
     return `## ${heading}\n\n${innerContent.trim()}`;
+  });
+
+  // Restore code spans
+  return protectedContent.replace(/\x00CODE_(BLOCK|SPAN)_([0-9]+)\x00/g, (_, _type, index) => {
+    return codeSpans[parseInt(index, 10)];
   });
 }
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -164,6 +186,12 @@ export const desktopMarkdownComponents: Components = {
         ((c as React.ReactElement)?.type === 'ul' || (c as React.ReactElement)?.type === 'ol')
     );
     
+    // Check if there are multiple block-level children (e.g., p + ul)
+    // that need to stack vertically instead of inline
+    const hasMultipleBlockChildren = childArr.filter(
+      (c) => typeof c === 'object' && c !== null && !['input', 'span', 'strong', 'em', 'code', 'a', 'del'].includes((c as React.ReactElement)?.type as string)
+    ).length > 1;
+    
     if (hasCheckbox) {
       return (
         <li className="flex items-start gap-2 text-sm text-gh-text py-0.5" {...props}>
@@ -172,11 +200,11 @@ export const desktopMarkdownComponents: Components = {
       );
     }
     
-    // For items with nested lists, use block layout instead of flex to allow proper nesting
-    if (hasNestedList) {
+    // For items with nested lists or multiple block children, use block layout
+    if (hasNestedList || hasMultipleBlockChildren) {
       return (
         <li 
-          className="text-sm text-gh-text py-0.5 pl-4 relative before:content-['›'] before:text-gh-accent before:font-bold before:absolute before:left-0 before:top-0.5" 
+          className="text-sm text-gh-text py-0.5 pl-4 relative before:content-['›'] before:text-gh-accent before:font-bold before:absolute before:left-0 before:top-0.5 [&>p]:mb-2 [&>p:last-child]:mb-0" 
           {...props}
         >
           {children}
