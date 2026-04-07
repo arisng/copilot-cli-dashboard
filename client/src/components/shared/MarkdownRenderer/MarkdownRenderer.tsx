@@ -261,11 +261,13 @@ export const desktopMarkdownComponents: Components = {
       );
     }
     
-    return inline ? (
-      <code className="text-xs font-mono bg-gh-surface text-gh-accent px-1.5 py-0.5 rounded border border-gh-border/50">
-        {children}
-      </code>
-    ) : (
+    // Inline code (single backticks) renders as plain text
+    if (inline) {
+      return <>{children}</>;
+    }
+    
+    // Code blocks without language still get code styling
+    return (
       <code className="text-xs font-mono bg-gh-surface text-gh-accent px-1.5 py-0.5 rounded border border-gh-border/50 block overflow-x-auto">
         {children}
       </code>
@@ -428,11 +430,13 @@ export const mobileMarkdownComponents: Components = {
       );
     }
     
-    return inline ? (
-      <code className="rounded border border-gh-border/60 bg-gh-bg px-1.5 py-0.5 font-mono text-xs text-gh-accent">
-        {children}
-      </code>
-    ) : (
+    // Inline code (single backticks) renders as plain text
+    if (inline) {
+      return <>{children}</>;
+    }
+    
+    // Code blocks without language still get code styling
+    return (
       <code className="rounded border border-gh-border/60 bg-gh-bg px-1.5 py-0.5 font-mono text-xs text-gh-accent block overflow-x-auto">
         {children}
       </code>
@@ -538,11 +542,13 @@ export const messageMarkdownComponents: Components = {
       );
     }
     
-    return inline ? (
-      <code className="text-gh-accent bg-gh-bg px-1.5 py-0.5 rounded text-xs font-mono border border-gh-border/50">
-        {children}
-      </code>
-    ) : (
+    // Inline code (single backticks) renders as plain text
+    if (inline) {
+      return <>{children}</>;
+    }
+    
+    // Code blocks without language still get code styling
+    return (
       <code className="text-gh-accent bg-gh-bg px-1.5 py-0.5 rounded text-xs font-mono border border-gh-border/50 block overflow-x-auto">
         {children}
       </code>
