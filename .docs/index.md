@@ -17,6 +17,7 @@ This index links Diátaxis-organized documentation for the workspace.
 - [How to Add a Tree View Component](how-to/dashboard/add-a-tree-view-component.md)
 - [How to Run the Production Server](how-to/dashboard/run-the-production-server.md)
 - [Show Unknown Context Sessions](how-to/dashboard/show-unknown-context-sessions.md)
+- [Use the Command Palette for Global Search](how-to/dashboard/use-command-palette-for-search.md)
 
 
 ## Reference
@@ -33,6 +34,7 @@ This index links Diátaxis-organized documentation for the workspace.
 ### Server
 
 - [Server Architecture Reference](reference/server/server-architecture.md)
+- [Search API Reference](reference/server/search-api.md)
 
 ### Session State
 
@@ -45,6 +47,7 @@ This index links Diátaxis-organized documentation for the workspace.
 
 - [About the Desktop Session UX Refresh](explanation/dashboard/desktop-session-ux.md)
 - [About the Dashboard Architecture](explanation/dashboard/how-it-works.md)
+- [Command Palette Design](explanation/dashboard/command-palette-design.md)
 - [File Tree Component Design](explanation/dashboard/file-tree-component-design.md)
 - [Session Overview Column Design](explanation/dashboard/session-overview-column-design.md)
 - [Session Sidebar Column Design](explanation/dashboard/session-sidebar-column-design.md)
