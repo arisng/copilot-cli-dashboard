@@ -1770,6 +1770,7 @@ export function SessionDetail() {
   const [selectedDbTable, setSelectedDbTable] = useState('');
   const [dbViewMode, setDbViewMode] = useState<SessionDbViewMode>('graph');
   const [showSessionSidebar, setShowSessionSidebar] = useState(false);
+  const [isWorkflowFullScreen, setIsWorkflowFullScreen] = useState(false);
   const subAgents = useMemo(() => [...(session?.activeSubAgents ?? [])].reverse(), [session?.activeSubAgents]);
   const hasPlan = Boolean(session?.hasPlan || session?.planContent);
   const hasTodos = (session?.todos?.length ?? 0) > 0;
@@ -1940,12 +1941,22 @@ export function SessionDetail() {
     };
   });
   const detailPanelClassName = `flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-gh-bg/20 ${modeBorderClass(session.currentMode)}`;
-  const detailGridClassName = showSessionSidebar
-    ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(18rem,450px)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(20rem,450px)] xl:gap-4'
-    : 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] xl:gap-4';
+  const detailGridClassName = isWorkflowFullScreen
+    ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[0_minmax(0,1fr)_0] xl:gap-4'
+    : showSessionSidebar
+      ? 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(18rem,450px)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)_minmax(20rem,450px)] xl:gap-4'
+      : 'grid h-full w-full min-h-0 gap-3 xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(16rem,450px)_minmax(0,1fr)] xl:gap-4';
 
   function handleViewChange(view: SessionDetailView) {
     setActiveView(view);
+    // Exit full-screen when switching away from workflow view
+    if (view !== 'workflow') {
+      setIsWorkflowFullScreen(false);
+    }
+  }
+
+  function handleToggleWorkflowFullScreen() {
+    setIsWorkflowFullScreen((prev) => !prev);
   }
 
   function handleThreadChange(threadId: string) {
@@ -1960,11 +1971,11 @@ export function SessionDetail() {
 
   return (
     <div className={detailGridClassName}>
-      <section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-surface/20 p-4">
+      <section className={`flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-surface/20 p-4 ${isWorkflowFullScreen ? 'hidden' : ''}`}>
         <SessionMeta session={session} />
       </section>
 
-      <section className={detailPanelClassName} aria-labelledby="session-detail-panel-heading">
+      <section className={`${detailPanelClassName} ${isWorkflowFullScreen ? 'col-span-full' : ''}`} aria-labelledby="session-detail-panel-heading">
         <DetailPanelHeader
           session={session}
           activeView={resolvedView}
@@ -1977,7 +1988,7 @@ export function SessionDetail() {
         />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 xl:flex-row" role="region" aria-labelledby="session-detail-panel-heading">
-          <aside className="min-h-0 overflow-y-auto rounded-xl border border-gh-border bg-gh-surface/20 p-3 xl:w-[18rem] xl:flex-shrink-0">
+          <aside className={`min-h-0 overflow-y-auto rounded-xl border border-gh-border bg-gh-surface/20 p-3 xl:w-[18rem] xl:flex-shrink-0 ${isWorkflowFullScreen ? 'hidden' : ''}`}>
             <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-gh-muted">Views</div>
             <SessionTabNav tabs={detailTabs} activeId={resolvedView} onChange={(id) => handleViewChange(id as SessionDetailView)} />
           </aside>
@@ -2197,13 +2208,17 @@ export function SessionDetail() {
             )}
 
             {resolvedView === 'workflow' && (
-              <WorkflowTopologyView messages={session.messages} />
+              <WorkflowTopologyView
+                messages={session.messages}
+                isFullScreen={isWorkflowFullScreen}
+                onToggleFullScreen={handleToggleWorkflowFullScreen}
+              />
             )}
           </div>
         </div>
       </section>
 
-      <div className={showSessionSidebar ? 'block' : 'block xl:hidden'}>
+      <div className={`${showSessionSidebar ? 'block' : 'block xl:hidden'} ${isWorkflowFullScreen ? 'hidden' : ''}`}>
         <SessionSidebar currentId={id ?? ''} currentProjectPath={session.projectPath} sessions={sessions} />
       </div>
     </div>
