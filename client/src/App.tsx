@@ -6,6 +6,7 @@ import { SessionWatchMode } from './components/SessionWatchMode/SessionWatchMode
 import { MobileLayout } from './components/mobile/MobileLayout.tsx';
 import { MobileSessionList } from './components/mobile/MobileSessionList.tsx';
 import { MobileSessionDetail } from './components/mobile/MobileSessionDetail.tsx';
+import { CommandPalette, useCommandPalette } from './components/shared/CommandPalette/index.ts';
 
 function DesktopRouteLayout() {
   return (
@@ -24,18 +25,24 @@ function MobileRouteLayout() {
 }
 
 export default function App() {
-  return (
-    <Routes>
-      <Route element={<DesktopRouteLayout />}>
-        <Route path="/" element={<SessionList />} />
-        <Route path="/sessions/:id" element={<SessionDetail />} />
-        <Route path="/watch" element={<SessionWatchMode />} />
-      </Route>
+  const { isOpen, open, close } = useCommandPalette();
 
-      <Route path="/m" element={<MobileRouteLayout />}>
-        <Route index element={<MobileSessionList />} />
-        <Route path="sessions/:id" element={<MobileSessionDetail />} />
-      </Route>
-    </Routes>
+  return (
+    <>
+      <Routes>
+        <Route element={<DesktopRouteLayout />}>
+          <Route path="/" element={<SessionList />} />
+          <Route path="/sessions/:id" element={<SessionDetail />} />
+          <Route path="/watch" element={<SessionWatchMode />} />
+        </Route>
+
+        <Route path="/m" element={<MobileRouteLayout />}>
+          <Route index element={<MobileSessionList />} />
+          <Route path="sessions/:id" element={<MobileSessionDetail />} />
+        </Route>
+      </Routes>
+
+      <CommandPalette isOpen={isOpen} onClose={close} />
+    </>
   );
 }
