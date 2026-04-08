@@ -62,10 +62,10 @@ export function parseMarkdownSections(content: string): { prelude: string; secti
     let endIndex = lines.length;
 
     for (let j = i + 1; j < headings.length; j++) {
-      if (headings[j].level <= h.level) {
-        endIndex = headings[j].index;
-        break;
-      }
+      // Stop at the next heading of any level to prevent child heading content
+      // from appearing in parent body (fixes duplicate content bug)
+      endIndex = headings[j].index;
+      break;
     }
 
     sections.push({
