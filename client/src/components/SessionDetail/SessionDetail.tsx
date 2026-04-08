@@ -39,6 +39,7 @@ import type {
 } from '../../api/client.ts';
 import { isImageFile } from '../../utils/fileUtils.ts';
 import { FileTree } from './FileTree.tsx';
+import { WorkflowTopologyView } from './WorkflowTopologyView.tsx';
 import {
   type MessageFilterState,
   DEFAULT_MESSAGE_FILTER_STATE,
@@ -53,12 +54,13 @@ import { sortTodosLatestFirst } from '../../utils/todoSort.ts';
 
 // ── Shared markdown renderer imported from ../shared/MarkdownRenderer ─────
 
-type SessionDetailView = 'main' | 'plan' | 'todos' | 'threads' | 'checkpoints' | 'research' | 'files' | 'session-db';
+type SessionDetailView = 'main' | 'plan' | 'todos' | 'threads' | 'checkpoints' | 'research' | 'files' | 'session-db' | 'workflow';
 type SessionDbViewMode = 'graph' | 'table';
 
 const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = [
   { value: 'main', label: 'Main session' },
   { value: 'threads', label: 'Sub-agent threads' },
+  { value: 'workflow', label: 'Workflow' },
   { value: 'plan', label: 'Plan' },
   { value: 'todos', label: 'Todos' },
   { value: 'checkpoints', label: 'Checkpoints' },
@@ -70,6 +72,7 @@ const DETAIL_VIEW_OPTIONS: Array<{ value: SessionDetailView; label: string }> = 
 const DETAIL_VIEW_DESCRIPTIONS: Partial<Record<SessionDetailView, string>> = {
   main: 'Primary conversation stream for the session.',
   threads: 'Sub-agent conversations with grouped selection.',
+  workflow: 'Visual workflow topology of turn execution.',
   plan: 'Captured plan content and execution guardrails.',
   todos: 'Work items with dependency and status tracking.',
   checkpoints: 'Captured checkpoint files and snapshots.',
@@ -578,6 +581,7 @@ function DetailPanelHeader({
     plan: 'Plan',
     todos: 'Todos',
     threads: 'Sub-agent threads',
+    workflow: 'Workflow Topology',
     checkpoints: 'Checkpoints',
     research: 'Research',
     files: 'Files',
@@ -622,6 +626,7 @@ function DetailPanelHeader({
     threads: activeThread
       ? activeThread.description || activeThread.agentDisplayName || activeThread.agentName
       : 'Sub-agent conversations grouped for quicker scanning.',
+    workflow: 'Node-based diagram showing turn execution flow.',
     checkpoints: checkpointGroup?.status === 'ok'
       ? `${checkpointFileCount} checkpoint file${checkpointFileCount === 1 ? '' : 's'} available.`
       : 'Checkpoint artifacts from the current session.',
@@ -641,6 +646,7 @@ function DetailPanelHeader({
     plan: session.isPlanPending ? 'Needs review' : 'Captured',
     todos: todos.length > 0 ? `${completedTodos}/${todos.length} done` : undefined,
     threads: activeThread ? (activeThread.isCompleted ? 'Done' : 'Running') : undefined,
+    workflow: 'Diagram',
     checkpoints: checkpointGroup?.status === 'ok' ? `${checkpointFileCount} files` : 'Artifacts',
     research: researchGroup?.status === 'ok' ? `${researchFileCount} files` : 'Artifacts',
     files: filesGroup?.status === 'ok' ? `${filesFileCount} files` : 'Artifacts',
@@ -662,6 +668,7 @@ function DetailPanelHeader({
     threads: activeThread?.isCompleted
       ? 'border-gh-border bg-gh-bg/70 text-gh-muted'
       : 'border-gh-active/30 bg-gh-active/10 text-gh-active',
+    workflow: 'border-gh-accent/30 bg-gh-accent/10 text-gh-accent',
     checkpoints: 'border-gh-border bg-gh-bg/70 text-gh-muted',
     research: 'border-gh-border bg-gh-bg/70 text-gh-muted',
     files: 'border-gh-border bg-gh-bg/70 text-gh-muted',
@@ -1904,6 +1911,7 @@ export function SessionDetail() {
           return timeB - timeA;
         })[0].lastActivityAt || session.lastActivityAt} />
       ) : null,
+      workflow: session.messages.length > 0 ? `${session.messages.length} messages` : 'No messages',
       checkpoints: lastCheckpointFile ? <RelativeTime timestamp={lastCheckpointFile.modifiedAt} /> : null,
       research: lastResearchFile ? <RelativeTime timestamp={lastResearchFile.modifiedAt} /> : null,
       files: filesGroup?.status === 'ok'
@@ -2186,6 +2194,10 @@ export function SessionDetail() {
                   </div>
                 )}
               </div>
+            )}
+
+            {resolvedView === 'workflow' && (
+              <WorkflowTopologyView messages={session.messages} />
             )}
           </div>
         </div>
