@@ -665,7 +665,7 @@ export function MarkdownRenderer({
   }
 
   return (
-    <div className={className}>
+    <div className={`markdown-viewer ${className}`}>
       <Markdown 
         remarkPlugins={[remarkGfm]}
         components={components}
