@@ -1543,3 +1543,179 @@ export function listAllSessions(): SessionSummary[] {
     (a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt)
   );
 }
+
+interface ResearchFileMatch {
+  sessionId: string;
+  sessionName: string;
+  filePath: string;
+  fileName: string;
+  snippet: string;
+  lastModified: string;
+}
+
+const TEXT_FILE_EXTENSIONS = ['.md', '.txt'];
+const MAX_RESULTS = 50;
+const MAX_FILE_SIZE = 50 * 1024; // 50 KB
+const SNIPPET_LENGTH = 150;
+const CONCURRENCY_LIMIT = 10;
+
+function isTextFile(fileName: string): boolean {
+  const lowerName = fileName.toLowerCase();
+  return TEXT_FILE_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+}
+
+function extractSnippet(content: string, query: string): string {
+  const lowerContent = content.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const index = lowerContent.indexOf(lowerQuery);
+
+  if (index === -1) {
+    // Return first line or first SNIPPET_LENGTH chars
+    const firstLine = content.split('\n')[0] ?? '';
+    return firstLine.length > SNIPPET_LENGTH ? firstLine.slice(0, SNIPPET_LENGTH) + '…' : firstLine;
+  }
+
+  // Extract snippet around the match
+  const start = Math.max(0, index - SNIPPET_LENGTH / 2);
+  const end = Math.min(content.length, index + query.length + SNIPPET_LENGTH / 2);
+  let snippet = content.slice(start, end);
+
+  if (start > 0) snippet = '…' + snippet;
+  if (end < content.length) snippet = snippet + '…';
+
+  return snippet.replace(/\s+/g, ' ').trim();
+}
+
+async function searchSessionResearch(
+  sessionId: string,
+  sessionDir: string,
+  query: string
+): Promise<ResearchFileMatch[]> {
+  const researchDir = path.join(sessionDir, 'research');
+
+  // Check if research directory exists
+  try {
+    const stat = await fs.promises.stat(researchDir);
+    if (!stat.isDirectory()) return [];
+  } catch {
+    return [];
+  }
+
+  const matches: ResearchFileMatch[] = [];
+  const workspace = readWorkspaceYaml(sessionDir);
+  const sessionName = workspace?.summary ?? 'Untitled session';
+
+  let entries: string[];
+  try {
+    entries = await fs.promises.readdir(researchDir);
+  } catch {
+    return [];
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(researchDir, entry);
+    const relativePath = `research/${entry}`;
+
+    // Validate path is within allowed artifacts
+    if (!isPathWithinAllowedArtifacts(relativePath)) continue;
+
+    try {
+      const stat = await fs.promises.stat(fullPath);
+      if (!stat.isFile()) continue;
+
+      const fileName = entry;
+      const lowerFileName = fileName.toLowerCase();
+      const lowerQuery = query.toLowerCase();
+
+      // Check filename match
+      const fileNameMatch = lowerFileName.includes(lowerQuery);
+      let contentMatch = false;
+      let snippet = '';
+
+      // For text files, also check content
+      if (isTextFile(fileName) && stat.size <= MAX_FILE_SIZE) {
+        try {
+          const content = await fs.promises.readFile(fullPath, 'utf8');
+          if (content.toLowerCase().includes(lowerQuery)) {
+            contentMatch = true;
+            snippet = extractSnippet(content, query);
+          } else if (fileNameMatch) {
+            // Filename matches but content doesn't - extract first line as snippet
+            snippet = extractSnippet(content, '');
+          }
+        } catch {
+          // Ignore read errors
+        }
+      } else if (fileNameMatch) {
+        snippet = fileName;
+      }
+
+      if (fileNameMatch || contentMatch) {
+        matches.push({
+          sessionId,
+          sessionName,
+          filePath: relativePath,
+          fileName,
+          snippet: snippet || fileName,
+          lastModified: formatTimestampFromStat(stat),
+        });
+      }
+    } catch {
+      // Skip files that can't be read
+      continue;
+    }
+  }
+
+  return matches;
+}
+
+async function withConcurrencyLimit<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<ResearchFileMatch[]>
+): Promise<ResearchFileMatch[]> {
+  const results: ResearchFileMatch[] = [];
+
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults.flat());
+  }
+
+  return results;
+}
+
+export async function searchResearchArtifacts(query: string): Promise<ResearchFileMatch[]> {
+  const roots = getSessionRoots();
+  const sessionDirs: Array<{ sessionId: string; sessionDir: string }> = [];
+
+  // Collect all session directories
+  for (const root of roots) {
+    try {
+      const entries = await fs.promises.readdir(root, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          sessionDirs.push({
+            sessionId: entry.name,
+            sessionDir: path.join(root, entry.name),
+          });
+        }
+      }
+    } catch {
+      // Skip roots that can't be read
+      continue;
+    }
+  }
+
+  // Search each session's research directory with concurrency limit
+  const allMatches = await withConcurrencyLimit(
+    sessionDirs,
+    CONCURRENCY_LIMIT,
+    ({ sessionId, sessionDir }) => searchSessionResearch(sessionId, sessionDir, query)
+  );
+
+  // Sort by lastModified descending and cap results
+  return allMatches
+    .sort((a, b) => Date.parse(b.lastModified) - Date.parse(a.lastModified))
+    .slice(0, MAX_RESULTS);
+}

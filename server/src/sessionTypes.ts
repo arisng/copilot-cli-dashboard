@@ -208,3 +208,12 @@ export interface SessionDetail extends SessionSummary {
   planContent?: string; // contents of plan.md, if present
   todos?: TodoItem[]; // from session.db todos table
 }
+
+export interface SearchResult {
+  sessionId: string;
+  sessionName: string;
+  filePath: string;
+  fileName: string;
+  snippet: string;
+  lastModified: string;
+}
