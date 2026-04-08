@@ -149,6 +149,15 @@ export interface SessionDbInspection {
   table: SessionDbTablePreview;
 }
 
+export interface SearchResult {
+  sessionId: string;
+  sessionName: string;
+  filePath: string;
+  fileName: string;
+  snippet: string;
+  lastModified: string;
+}
+
 export interface SessionDetail extends SessionSummary {
   messages: ParsedMessage[];
   subAgentMessages: Record<string, ParsedMessage[]>;
@@ -239,4 +248,13 @@ export async function checkHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function searchResearch(q: string): Promise<SearchResult[]> {
+  const params = new URLSearchParams();
+  params.set('q', q);
+  params.set('type', 'research');
+
+  const data = await fetchJson<{ results: SearchResult[] }>(`/api/search?${params.toString()}`);
+  return data.results;
 }
