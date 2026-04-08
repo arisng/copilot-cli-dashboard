@@ -5,6 +5,7 @@ import {
   parseSessionDir,
   readSessionArtifacts,
   readSessionArtifactFile,
+  searchResearchArtifacts,
   SessionDbInspectionError,
 } from './sessionReader.js';
 
@@ -136,5 +137,28 @@ function readPreviewLimit(value: unknown): number | null {
 
   return Math.min(Math.max(parsed, 1), 100);
 }
+
+router.get('/search', async (req, res) => {
+  const query = readStringQueryParam(req.query.q);
+  const type = readStringQueryParam(req.query.type) ?? 'research';
+
+  if (type !== 'research') {
+    res.status(400).json({
+      error: 'Invalid search type',
+      details: `Search type "${type}" is not supported. Only "research" is supported in the pilot.`,
+    });
+    return;
+  }
+
+  try {
+    const results = await searchResearchArtifacts(query ?? '');
+    res.json({ results });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Search failed',
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
 
 export default router;
