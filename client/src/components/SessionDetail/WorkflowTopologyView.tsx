@@ -24,6 +24,77 @@ interface NodePosition {
   height: number;
 }
 
+interface NodeGroup {
+  id: string;
+  label: string;
+  type: 'tool-group' | 'agent-group';
+  nodeIds: string[];
+  isExpanded: boolean;
+  collapsedCount: number;
+}
+
+// Group similar nodes together
+function buildNodeGroups(nodes: WorkflowNode[]): NodeGroup[] {
+  const groups: NodeGroup[] = [];
+  const processedNodeIds = new Set<string>();
+
+  // Group tool calls by tool name
+  const toolNodesByName = new Map<string, WorkflowNode[]>();
+  const agentNodes: WorkflowNode[] = [];
+
+  for (const node of nodes) {
+    if (node.type === 'tool-call') {
+      const existing = toolNodesByName.get(node.label) ?? [];
+      existing.push(node);
+      toolNodesByName.set(node.label, existing);
+    } else if (node.type === 'sub-agent') {
+      agentNodes.push(node);
+    }
+  }
+
+  // Create tool groups for tools with more than 1 occurrence
+  for (const [toolName, toolNodes] of toolNodesByName) {
+    if (toolNodes.length > 1) {
+      const group: NodeGroup = {
+        id: `group-tool-${toolName}`,
+        label: toolName,
+        type: 'tool-group',
+        nodeIds: toolNodes.map(n => n.id),
+        isExpanded: false,
+        collapsedCount: toolNodes.length,
+      };
+      groups.push(group);
+      toolNodes.forEach(n => processedNodeIds.add(n.id));
+    }
+  }
+
+  // Group sub-agents by agent type/prefix
+  const agentNodesByType = new Map<string, WorkflowNode[]>();
+  for (const node of agentNodes) {
+    const agentType = node.metadata?.agentType as string || 'agent';
+    const existing = agentNodesByType.get(agentType) ?? [];
+    existing.push(node);
+    agentNodesByType.set(agentType, existing);
+  }
+
+  for (const [agentType, agents] of agentNodesByType) {
+    if (agents.length > 1) {
+      const group: NodeGroup = {
+        id: `group-agent-${agentType}`,
+        label: `${agentType} agents`,
+        type: 'agent-group',
+        nodeIds: agents.map(n => n.id),
+        isExpanded: false,
+        collapsedCount: agents.length,
+      };
+      groups.push(group);
+      agents.forEach(n => processedNodeIds.add(n.id));
+    }
+  }
+
+  return groups;
+}
+
 // Build workflow graph from messages for a specific turn
 function buildWorkflowGraph(messages: ParsedMessage[]): WorkflowGraph {
   const nodes: WorkflowNode[] = [];
@@ -139,17 +210,50 @@ function buildWorkflowGraph(messages: ParsedMessage[]): WorkflowGraph {
 }
 
 // Calculate node positions using a simple layered layout
-function calculateNodePositions(nodes: WorkflowNode[]): Map<string, NodePosition> {
+function calculateNodePositions(nodes: WorkflowNode[], groups: NodeGroup[], expandedGroups: Set<string>): Map<string, NodePosition> {
   const positions = new Map<string, NodePosition>();
   const nodeWidth = 200;
   const nodeHeight = 80;
+  const collapsedGroupHeight = 60;
   const horizontalGap = 60;
   const verticalGap = 40;
 
-  // Group nodes by type for layering
-  const userNode = nodes.find((n) => n.type === 'user-prompt');
-  const toolNodes = nodes.filter((n) => n.type === 'tool-call' || n.type === 'sub-agent');
-  const resultNode = nodes.find((n) => n.type === 'result');
+  // Build visible node list considering collapsed groups
+  const visibleNodes: WorkflowNode[] = [];
+  const hiddenNodeIds = new Set<string>();
+  const nodeIdToGroup = new Map<string, NodeGroup>();
+
+  for (const group of groups) {
+    if (!expandedGroups.has(group.id)) {
+      // Group is collapsed - hide its nodes
+      group.nodeIds.forEach(id => hiddenNodeIds.add(id));
+    }
+    group.nodeIds.forEach(id => nodeIdToGroup.set(id, group));
+  }
+
+  for (const node of nodes) {
+    if (!hiddenNodeIds.has(node.id)) {
+      visibleNodes.push(node);
+    }
+  }
+
+  // Group visible nodes by type for layering
+  const userNode = visibleNodes.find((n) => n.type === 'user-prompt');
+  const toolNodes = visibleNodes.filter((n) => n.type === 'tool-call' || n.type === 'sub-agent');
+  const resultNode = visibleNodes.find((n) => n.type === 'result');
+
+  // Track which nodes are in collapsed groups
+  const collapsedGroupNodes = new Map<string, NodeGroup>();
+  for (const group of groups) {
+    if (!expandedGroups.has(group.id)) {
+      // Add a virtual node for the collapsed group
+      const firstNodeId = group.nodeIds[0];
+      const firstNode = nodes.find(n => n.id === firstNodeId);
+      if (firstNode) {
+        collapsedGroupNodes.set(group.id, group);
+      }
+    }
+  }
 
   let currentX = 50;
   const centerY = 250;
@@ -165,19 +269,47 @@ function calculateNodePositions(nodes: WorkflowNode[]): Map<string, NodePosition
     currentX += nodeWidth + horizontalGap;
   }
 
-  // Position tool/agent nodes in a vertical stack
+  // Position tool/agent nodes, grouping collapsed ones
+  let lastGroupId: string | null = null;
+  let currentY = centerY - (toolNodes.length * (nodeHeight + verticalGap)) / 2;
+
   for (let i = 0; i < toolNodes.length; i++) {
     const node = toolNodes[i];
-    const stackOffset = toolNodes.length > 1 
-      ? (i - (toolNodes.length - 1) / 2) * (nodeHeight + verticalGap)
-      : 0;
-    
-    positions.set(node.id, {
-      x: currentX,
-      y: centerY - nodeHeight / 2 + stackOffset,
-      width: nodeWidth,
-      height: nodeHeight,
-    });
+    const group = nodeIdToGroup.get(node.id);
+
+    if (group && !expandedGroups.has(group.id)) {
+      // This node is part of a collapsed group
+      if (lastGroupId !== group.id) {
+        // First node of collapsed group - show group badge
+        positions.set(node.id, {
+          x: currentX,
+          y: centerY - collapsedGroupHeight / 2,
+          width: nodeWidth,
+          height: collapsedGroupHeight,
+        });
+        lastGroupId = group.id;
+      } else {
+        // Subsequent nodes in collapsed group - hide (position off-screen)
+        positions.set(node.id, {
+          x: -1000,
+          y: -1000,
+          width: 0,
+          height: 0,
+        });
+      }
+    } else {
+      lastGroupId = null;
+      const stackOffset = toolNodes.length > 1 
+        ? (i - (toolNodes.length - 1) / 2) * (nodeHeight + verticalGap)
+        : 0;
+      
+      positions.set(node.id, {
+        x: currentX,
+        y: centerY - nodeHeight / 2 + stackOffset,
+        width: nodeWidth,
+        height: nodeHeight,
+      });
+    }
   }
 
   if (toolNodes.length > 0) {
@@ -197,17 +329,59 @@ function calculateNodePositions(nodes: WorkflowNode[]): Map<string, NodePosition
   return positions;
 }
 
+// Calculate proper arrow endpoint on node edge
+function calculateArrowEndpoint(
+  x1: number, y1: number, x2: number, y2: number, 
+  targetWidth: number, targetHeight: number
+): { x: number; y: number; angle: number } {
+  // Calculate angle from source to target
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const angle = Math.atan2(dy, dx);
+
+  // Target center
+  const targetCx = x2 + targetWidth / 2;
+  const targetCy = y2 + targetHeight / 2;
+
+  // Find intersection with target rectangle
+  // We need to find where the line from (x1, y1) to (targetCx, targetCy) 
+  // intersects the rectangle [x2, x2+width] x [y2, y2+height]
+
+  const halfWidth = targetWidth / 2;
+  const halfHeight = targetHeight / 2;
+
+  // Calculate intersection with each edge
+  let intersectX = x2;
+  let intersectY = targetCy;
+
+  if (Math.abs(dx) > 0.001) {
+    // Check left edge intersection
+    const tLeft = (x2 - x1) / dx;
+    const yLeft = y1 + tLeft * dy;
+    if (tLeft > 0 && yLeft >= y2 && yLeft <= y2 + targetHeight) {
+      intersectX = x2;
+      intersectY = yLeft;
+    }
+  }
+
+  return { x: intersectX, y: intersectY, angle };
+}
+
 // Node component for rendering a single node
 function WorkflowNodeCard({
   node,
   position,
   isSelected,
   onClick,
+  group,
+  onToggleGroup,
 }: {
   node: WorkflowNode;
   position: NodePosition;
   isSelected: boolean;
   onClick: () => void;
+  group?: NodeGroup;
+  onToggleGroup?: () => void;
 }) {
   const getNodeColor = () => {
     switch (node.type) {
@@ -235,6 +409,8 @@ function WorkflowNodeCard({
     return <span className={`w-2 h-2 rounded-full ${colors[node.status]}`} />;
   };
 
+  const isCollapsedGroup = group && !group.isExpanded && group.nodeIds[0] === node.id;
+
   return (
     <div
       onClick={onClick}
@@ -245,7 +421,7 @@ function WorkflowNodeCard({
         left: position.x,
         top: position.y,
         width: position.width,
-        height: position.height,
+        height: isCollapsedGroup ? 60 : position.height,
       }}
     >
       <div className="flex items-start gap-2 h-full overflow-hidden">
@@ -253,14 +429,31 @@ function WorkflowNodeCard({
           <div className="flex items-center gap-1.5 mb-1">
             {getStatusDot()}
             <span className="text-[10px] uppercase tracking-wide text-gh-muted/70">
-              {node.type.replace('-', ' ')}
+              {isCollapsedGroup ? `${group.type === 'tool-group' ? 'tools' : 'agents'} (${group.collapsedCount})` : node.type.replace('-', ' ')}
             </span>
           </div>
-          <p className="text-xs font-medium text-gh-text truncate">{node.label}</p>
-          {node.description && (
+          <p className="text-xs font-medium text-gh-text truncate">
+            {isCollapsedGroup ? `${group.collapsedCount} ${group.label}` : node.label}
+          </p>
+          {!isCollapsedGroup && node.description && (
             <p className="text-[10px] text-gh-muted/80 line-clamp-2 mt-0.5">{node.description}</p>
           )}
         </div>
+        {isCollapsedGroup && onToggleGroup && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleGroup();
+            }}
+            className="shrink-0 rounded p-1 hover:bg-gh-bg/50 text-gh-muted hover:text-gh-text"
+            title="Expand group"
+          >
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+              <path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -269,18 +462,24 @@ function WorkflowNodeCard({
 // Canvas container for the diagram
 function WorkflowCanvas({
   graph,
+  groups,
+  expandedGroups,
   selectedNodeId,
   onNodeSelect,
+  onToggleGroup,
 }: {
   graph: WorkflowGraph;
+  groups: NodeGroup[];
+  expandedGroups: Set<string>;
   selectedNodeId: string | null;
   onNodeSelect: (id: string | null) => void;
+  onToggleGroup: (groupId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, zoom: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const positions = useMemo(() => calculateNodePositions(graph.nodes), [graph.nodes]);
+  const positions = useMemo(() => calculateNodePositions(graph.nodes, groups, expandedGroups), [graph.nodes, groups, expandedGroups]);
 
   // Calculate canvas bounds
   const canvasBounds = useMemo(() => {
@@ -288,10 +487,12 @@ function WorkflowCanvas({
     let maxX = 0;
     let maxY = 0;
     for (const pos of positions.values()) {
-      maxX = Math.max(maxX, pos.x + pos.width);
-      maxY = Math.max(maxY, pos.y + pos.height);
+      if (pos.x >= 0) {
+        maxX = Math.max(maxX, pos.x + pos.width);
+        maxY = Math.max(maxY, pos.y + pos.height);
+      }
     }
-    return { width: maxX + 100, height: Math.max(maxY + 100, 500) };
+    return { width: Math.max(maxX + 100, 800), height: Math.max(maxY + 100, 500) };
   }, [positions]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -337,6 +538,65 @@ function WorkflowCanvas({
     }
   }, [canvasBounds.width]);
 
+  // Build map of node IDs to groups
+  const nodeIdToGroup = useMemo(() => {
+    const map = new Map<string, NodeGroup>();
+    for (const group of groups) {
+      for (const nodeId of group.nodeIds) {
+        map.set(nodeId, group);
+      }
+    }
+    return map;
+  }, [groups]);
+
+  // Calculate edges with proper arrowheads
+  const edgeElements = useMemo(() => {
+    return graph.edges.map((edge) => {
+      const fromPos = positions.get(edge.from);
+      const toPos = positions.get(edge.to);
+      if (!fromPos || !toPos) return null;
+
+      // Skip edges to hidden nodes (in collapsed groups)
+      if (toPos.x < 0 || fromPos.x < 0) return null;
+
+      // Check if target is part of a collapsed group
+      const toGroup = nodeIdToGroup.get(edge.to);
+      const isToCollapsed = toGroup && !expandedGroups.has(toGroup.id);
+      
+      // Use collapsed height if target is collapsed
+      const targetHeight = isToCollapsed ? 60 : toPos.height;
+
+      // Source: right edge center
+      const x1 = fromPos.x + fromPos.width;
+      const y1 = fromPos.y + fromPos.height / 2;
+
+      // Calculate proper arrow endpoint
+      const endpoint = calculateArrowEndpoint(x1, y1, toPos.x, toPos.y, toPos.width, targetHeight);
+      
+      // Shorten the line slightly to not overlap with arrowhead
+      const arrowSize = 10;
+      const lineEndX = endpoint.x - Math.cos(endpoint.angle) * arrowSize;
+      const lineEndY = endpoint.y - Math.sin(endpoint.angle) * arrowSize;
+
+      // Calculate arrowhead points
+      const angle = endpoint.angle;
+      const arrowAngle = Math.PI / 6; // 30 degrees
+      const ax1 = endpoint.x - arrowSize * Math.cos(angle - arrowAngle);
+      const ay1 = endpoint.y - arrowSize * Math.sin(angle - arrowAngle);
+      const ax2 = endpoint.x - arrowSize * Math.cos(angle + arrowAngle);
+      const ay2 = endpoint.y - arrowSize * Math.sin(angle + arrowAngle);
+
+      return {
+        id: edge.id,
+        x1,
+        y1,
+        x2: lineEndX,
+        y2: lineEndY,
+        arrowPoints: `${endpoint.x},${endpoint.y} ${ax1},${ay1} ${ax2},${ay2}`,
+      };
+    }).filter(Boolean);
+  }, [graph.edges, positions, nodeIdToGroup, expandedGroups]);
+
   return (
     <div
       ref={containerRef}
@@ -366,47 +626,50 @@ function WorkflowCanvas({
           width={canvasBounds.width}
           height={canvasBounds.height}
         >
-          {graph.edges.map((edge) => {
-            const fromPos = positions.get(edge.from);
-            const toPos = positions.get(edge.to);
-            if (!fromPos || !toPos) return null;
-            
-            const x1 = fromPos.x + fromPos.width;
-            const y1 = fromPos.y + fromPos.height / 2;
-            const x2 = toPos.x;
-            const y2 = toPos.y + toPos.height / 2;
-            
-            return (
-              <g key={edge.id}>
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="text-gh-border"
-                />
-                <polygon
-                  points={`${x2},${y2} ${x2 - 8},${y2 - 4} ${x2 - 8},${y2 + 4}`}
-                  fill="currentColor"
-                  className="text-gh-border"
-                />
-              </g>
-            );
-          })}
+          {edgeElements.map((edge) => edge && (
+            <g key={edge.id}>
+              <line
+                x1={edge.x1}
+                y1={edge.y1}
+                x2={edge.x2}
+                y2={edge.y2}
+                stroke="currentColor"
+                strokeWidth="2"
+                className="text-gh-border"
+              />
+              <polygon
+                points={edge.arrowPoints}
+                fill="currentColor"
+                className="text-gh-border"
+              />
+            </g>
+          ))}
         </svg>
 
         {/* Nodes layer */}
-        {graph.nodes.map((node) => (
-          <WorkflowNodeCard
-            key={node.id}
-            node={node}
-            position={positions.get(node.id)!}
-            isSelected={selectedNodeId === node.id}
-            onClick={() => onNodeSelect(selectedNodeId === node.id ? null : node.id)}
-          />
-        ))}
+        {graph.nodes.map((node) => {
+          const pos = positions.get(node.id);
+          if (!pos || pos.x < 0) return null; // Skip hidden nodes
+          
+          const group = nodeIdToGroup.get(node.id);
+          const isGroupCollapsed = group && !expandedGroups.has(group.id);
+          const isFirstInCollapsedGroup = isGroupCollapsed && group.nodeIds[0] === node.id;
+          
+          // Only render first node of collapsed group, or all expanded nodes
+          if (isGroupCollapsed && !isFirstInCollapsedGroup) return null;
+
+          return (
+            <WorkflowNodeCard
+              key={node.id}
+              node={node}
+              position={pos}
+              isSelected={selectedNodeId === node.id}
+              onClick={() => onNodeSelect(selectedNodeId === node.id ? null : node.id)}
+              group={group}
+              onToggleGroup={group ? () => onToggleGroup(group.id) : undefined}
+            />
+          );
+        })}
       </div>
 
       {/* Controls overlay */}
@@ -443,12 +706,30 @@ function WorkflowCanvas({
           <span className="text-xs text-gh-muted">Result</span>
         </div>
       </div>
+
+      {/* Group expansion hint */}
+      {groups.some(g => !expandedGroups.has(g.id)) && (
+        <div className="absolute bottom-4 left-4 rounded-lg border border-gh-border bg-gh-surface/90 px-3 py-2 text-xs text-gh-muted">
+          <span className="flex items-center gap-1.5">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+              <path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+              <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
+            </svg>
+            Click collapsed groups to expand
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 // Node details panel
-function NodeDetailsPanel({ node, onClose }: { node: WorkflowNode; onClose: () => void }) {
+function NodeDetailsPanel({ node, group, onClose, onToggleGroup }: { 
+  node: WorkflowNode; 
+  group?: NodeGroup;
+  onClose: () => void;
+  onToggleGroup?: () => void;
+}) {
   return (
     <div className="absolute top-4 right-4 w-72 rounded-xl border border-gh-border bg-gh-surface/95 shadow-lg">
       <div className="flex items-center justify-between border-b border-gh-border px-4 py-3">
@@ -505,7 +786,24 @@ function NodeDetailsPanel({ node, onClose }: { node: WorkflowNode; onClose: () =
             </p>
           </div>
         )}
-        {node.metadata && Object.keys(node.metadata).length > 0 && (
+        {group && (
+          <div className="border-t border-gh-border pt-3 mt-3">
+            <p className="text-[10px] uppercase tracking-wide text-gh-muted/70 mb-2">Group</p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-gh-text">{group.label}</span>
+              <span className="text-xs text-gh-muted">({group.collapsedCount} items)</span>
+            </div>
+            {onToggleGroup && (
+              <button
+                onClick={onToggleGroup}
+                className="mt-2 w-full rounded-md border border-gh-border bg-gh-bg px-3 py-1.5 text-xs text-gh-text hover:border-gh-accent transition-colors"
+              >
+                {group.isExpanded ? 'Collapse Group' : 'Expand Group'}
+              </button>
+            )}
+          </div>
+        )}
+        {node.metadata && Object.keys(node.metadata).length > 0 && !group && (
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gh-muted/70 mb-1">Metadata</p>
             <pre className="text-[10px] text-gh-muted bg-gh-bg/50 rounded p-2 overflow-auto max-h-32">
@@ -525,6 +823,7 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
     turnOptions[turnOptions.length - 1]?.turnId ?? ''
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Update selected turn when turns change
   useEffect(() => {
@@ -543,9 +842,44 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
     [currentTurn]
   );
 
+  const groups = useMemo(
+    () => buildNodeGroups(graph.nodes),
+    [graph.nodes]
+  );
+
   const selectedNode = useMemo(
     () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
     [graph.nodes, selectedNodeId]
+  );
+
+  const selectedGroup = useMemo(() => {
+    if (!selectedNode) return undefined;
+    return groups.find(g => g.nodeIds.includes(selectedNode.id));
+  }, [groups, selectedNode]);
+
+  const handleToggleGroup = useCallback((groupId: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleExpandAll = useCallback(() => {
+    setExpandedGroups(new Set(groups.map(g => g.id)));
+  }, [groups]);
+
+  const handleCollapseAll = useCallback(() => {
+    setExpandedGroups(new Set());
+  }, []);
+
+  const collapsedCount = useMemo(() => 
+    groups.filter(g => !expandedGroups.has(g.id)).length,
+    [groups, expandedGroups]
   );
 
   if (turnOptions.length === 0) {
@@ -588,6 +922,27 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
                 </option>
               ))}
             </select>
+            {groups.length > 0 && (
+              <div className="flex items-center gap-1 border-l border-gh-border pl-2 ml-1">
+                {collapsedCount > 0 ? (
+                  <button
+                    onClick={handleExpandAll}
+                    className="text-xs text-gh-accent hover:text-gh-text px-2 py-1 rounded hover:bg-gh-surface/50"
+                    title="Expand all groups"
+                  >
+                    Expand all ({collapsedCount})
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleCollapseAll}
+                    className="text-xs text-gh-accent hover:text-gh-text px-2 py-1 rounded hover:bg-gh-surface/50"
+                    title="Collapse all groups"
+                  >
+                    Collapse all
+                  </button>
+                )}
+              </div>
+            )}
             {onToggleFullScreen && (
               <button
                 type="button"
@@ -619,6 +974,15 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
             <span className="w-2 h-2 rounded-full bg-gh-border" />
             {graph.edges.length} edges
           </span>
+          {groups.length > 0 && (
+            <span className="flex items-center gap-1.5">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="text-gh-muted">
+                <path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+                <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
+              </svg>
+              {groups.length} groups ({collapsedCount} collapsed)
+            </span>
+          )}
           {currentTurn && (
             <span className="text-gh-muted/70">
               <RelativeTime timestamp={currentTurn.messages[0]?.timestamp} />
@@ -630,13 +994,21 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
       {/* Canvas area */}
       <WorkflowCanvas
         graph={graph}
+        groups={groups}
+        expandedGroups={expandedGroups}
         selectedNodeId={selectedNodeId}
         onNodeSelect={setSelectedNodeId}
+        onToggleGroup={handleToggleGroup}
       />
 
       {/* Node details panel */}
       {selectedNode && (
-        <NodeDetailsPanel node={selectedNode} onClose={() => setSelectedNodeId(null)} />
+        <NodeDetailsPanel 
+          node={selectedNode} 
+          group={selectedGroup}
+          onClose={() => setSelectedNodeId(null)}
+          onToggleGroup={selectedGroup ? () => handleToggleGroup(selectedGroup.id) : undefined}
+        />
       )}
     </div>
   );
