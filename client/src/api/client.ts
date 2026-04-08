@@ -156,6 +156,37 @@ export interface SessionDetail extends SessionSummary {
   todos?: TodoItem[];
 }
 
+// Workflow topology types
+export type WorkflowNodeType = 'user-prompt' | 'assistant-response' | 'tool-call' | 'sub-agent' | 'result';
+
+export interface WorkflowNode {
+  id: string;
+  type: WorkflowNodeType;
+  label: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+  status?: 'pending' | 'running' | 'completed' | 'error';
+  timestamp?: string;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface WorkflowGraph {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+}
+
+export interface TurnWorkflow {
+  turnId: string;
+  turnLabel: string;
+  graph: WorkflowGraph;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) {
