@@ -1,7 +1,7 @@
 ---
 title: "Normalize structural XML tags and nested list rendering in markdown viewer"
 type: "Feature"
-status: "Open"
+status: "Closed"
 author: "Copilot"
 created: "2026-04-07"
 priority: "High"
