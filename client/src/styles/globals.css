@@ -175,4 +175,18 @@
     line-height: 1.25rem !important;
     color: #e6edf3 !important;
   }
+
+  /* Markdown viewer specific styles */
+  .markdown-viewer li button {
+    width: unset !important;
+    padding-left: .5rem;
+  }
+
+  .markdown-viewer ul li {
+    display: block !important;
+  }
+
+  .markdown-viewer section button {
+    align-items: center !important;
+  }
 }
