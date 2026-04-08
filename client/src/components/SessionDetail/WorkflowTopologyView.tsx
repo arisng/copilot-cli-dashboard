@@ -442,8 +442,8 @@ function WorkflowNodeCard({
               {isCollapsedGroup ? `Group: ${group.collapsedCount} ${group.type === 'tool-group' ? 'tools' : 'agents'}` : node.type.replace('-', ' ')}
             </span>
           </div>
-          <p className="text-xs font-medium text-gh-text truncate">
-            {isCollapsedGroup ? `${group.label}` : node.label}
+          <p className="text-xs font-medium text-gh-text truncate" title={isCollapsedGroup ? `${group.label} group with ${group.collapsedCount} items` : node.label}>
+            {isCollapsedGroup ? `${node.label} +${group.collapsedCount - 1}` : node.label}
           </p>
           {!isCollapsedGroup && node.description && (
             <p className="text-[10px] text-gh-muted/80 line-clamp-2 mt-0.5">{node.description}</p>
