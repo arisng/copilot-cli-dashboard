@@ -374,6 +374,7 @@ function WorkflowNodeCard({
   isSelected,
   onClick,
   group,
+  isGroupExpanded,
   onToggleGroup,
 }: {
   node: WorkflowNode;
@@ -381,9 +382,13 @@ function WorkflowNodeCard({
   isSelected: boolean;
   onClick: () => void;
   group?: NodeGroup;
+  isGroupExpanded?: boolean;
   onToggleGroup?: () => void;
 }) {
   const getNodeColor = () => {
+    if (isCollapsedGroup) {
+      return 'border-dashed border-gh-accent/60 bg-gh-accent/5';
+    }
     switch (node.type) {
       case 'user-prompt':
         return 'border-gh-accent/50 bg-gh-accent/10';
@@ -409,7 +414,7 @@ function WorkflowNodeCard({
     return <span className={`w-2 h-2 rounded-full ${colors[node.status]}`} />;
   };
 
-  const isCollapsedGroup = group && !group.isExpanded && group.nodeIds[0] === node.id;
+  const isCollapsedGroup = group && !isGroupExpanded && group.nodeIds[0] === node.id;
 
   return (
     <div
@@ -427,13 +432,18 @@ function WorkflowNodeCard({
       <div className="flex items-start gap-2 h-full overflow-hidden">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-1">
-            {getStatusDot()}
-            <span className="text-[10px] uppercase tracking-wide text-gh-muted/70">
-              {isCollapsedGroup ? `${group.type === 'tool-group' ? 'tools' : 'agents'} (${group.collapsedCount})` : node.type.replace('-', ' ')}
+            {isCollapsedGroup ? (
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="text-gh-accent">
+                <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
+                <path d="M4 6a2 2 0 1 1 4 0 2 2 0 0 1-4 0zm6 0a2 2 0 1 1 4 0 2 2 0 0 1-4 0zm-3 5.5a2 2 0 1 1 4 0 2 2 0 0 1-4 0z"/>
+              </svg>
+            ) : getStatusDot()}
+            <span className={`text-[10px] uppercase tracking-wide ${isCollapsedGroup ? 'text-gh-accent font-medium' : 'text-gh-muted/70'}`}>
+              {isCollapsedGroup ? `Group: ${group.collapsedCount} ${group.type === 'tool-group' ? 'tools' : 'agents'}` : node.type.replace('-', ' ')}
             </span>
           </div>
           <p className="text-xs font-medium text-gh-text truncate">
-            {isCollapsedGroup ? `${group.collapsedCount} ${group.label}` : node.label}
+            {isCollapsedGroup ? `${group.label}` : node.label}
           </p>
           {!isCollapsedGroup && node.description && (
             <p className="text-[10px] text-gh-muted/80 line-clamp-2 mt-0.5">{node.description}</p>
@@ -445,13 +455,10 @@ function WorkflowNodeCard({
               e.stopPropagation();
               onToggleGroup();
             }}
-            className="shrink-0 rounded p-1 hover:bg-gh-bg/50 text-gh-muted hover:text-gh-text"
-            title="Expand group"
+            className="shrink-0 rounded-md border border-gh-accent/50 bg-gh-accent/20 px-2 py-1 text-xs font-medium text-gh-accent hover:bg-gh-accent/30 transition-colors"
+            title="Click to expand group"
           >
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-              <path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
-              <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
-            </svg>
+            +{group.collapsedCount - 1} more
           </button>
         )}
       </div>
@@ -549,18 +556,49 @@ function WorkflowCanvas({
     return map;
   }, [groups]);
 
+  // Build a map of hidden nodes to their group's representative node
+  const hiddenNodeToRepresentative = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const group of groups) {
+      if (!expandedGroups.has(group.id)) {
+        // Group is collapsed - map all nodes (except first) to the first node
+        const representativeId = group.nodeIds[0];
+        for (let i = 1; i < group.nodeIds.length; i++) {
+          map.set(group.nodeIds[i], representativeId);
+        }
+      }
+    }
+    return map;
+  }, [groups, expandedGroups]);
+
   // Calculate edges with proper arrowheads
   const edgeElements = useMemo(() => {
     return graph.edges.map((edge) => {
-      const fromPos = positions.get(edge.from);
-      const toPos = positions.get(edge.to);
+      // Remap source/target if they're hidden in collapsed groups
+      let fromId = edge.from;
+      let toId = edge.to;
+      
+      // If source is hidden, use its group representative
+      if (hiddenNodeToRepresentative.has(fromId)) {
+        fromId = hiddenNodeToRepresentative.get(fromId)!;
+      }
+      // If target is hidden, use its group representative  
+      if (hiddenNodeToRepresentative.has(toId)) {
+        toId = hiddenNodeToRepresentative.get(toId)!;
+      }
+      
+      // Skip self-loops (edges that collapse to same node)
+      if (fromId === toId) return null;
+
+      const fromPos = positions.get(fromId);
+      const toPos = positions.get(toId);
       if (!fromPos || !toPos) return null;
 
-      // Skip edges to hidden nodes (in collapsed groups)
+      // Skip if positions are invalid
       if (toPos.x < 0 || fromPos.x < 0) return null;
 
-      // Check if target is part of a collapsed group
-      const toGroup = nodeIdToGroup.get(edge.to);
+      // Check if target is a collapsed group representative
+      const toGroup = nodeIdToGroup.get(toId);
       const isToCollapsed = toGroup && !expandedGroups.has(toGroup.id);
       
       // Use collapsed height if target is collapsed
@@ -666,6 +704,7 @@ function WorkflowCanvas({
               isSelected={selectedNodeId === node.id}
               onClick={() => onNodeSelect(selectedNodeId === node.id ? null : node.id)}
               group={group}
+              isGroupExpanded={group ? expandedGroups.has(group.id) : undefined}
               onToggleGroup={group ? () => onToggleGroup(group.id) : undefined}
             />
           );
