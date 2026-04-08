@@ -63,3 +63,61 @@ We scoped the `collapsible` prop to document-style surfaces only (plan and artif
 ## Default state
 
 Documents open with **all sections expanded**. This preserves the existing "read everything" experience and avoids surprising users who expect to see the full plan on first load. Users can then collapse sections as needed, or use "Collapse all" to get a high-level overview.
+
+## Bug fix: Duplicate content in nested sections
+
+### The problem
+
+When a document had nested headings (e.g., H2 containing H3 subsections), expanding a parent heading displayed duplicate content. The parent section's body included the raw markdown of all child headings, while those same child headings were also rendered as separate collapsible sections below.
+
+**Example of the bug:**
+```md
+## Section A
+Some intro text.
+### Sub-section A1
+Detail content for A1.
+```
+
+When "Section A" was expanded, users would see:
+1. "Some intro text."
+2. "### Sub-section A1" rendered as a plain heading inside Section A's body
+3. "Sub-section A1" as a separate collapsible section below
+
+This made documents with multiple heading levels confusing to read.
+
+### Root cause
+
+In `parseMarkdownSections`, the algorithm calculated each section's body by slicing from the line after its heading to the line before the *next heading of the same or higher level*:
+
+```ts
+for (let j = i + 1; j < headings.length; j++) {
+  if (headings[j].level <= h.level) {  // Only stops at same-or-higher level
+    endIndex = headings[j].index;
+    break;
+  }
+}
+```
+
+Because the stop condition used `<= h.level`, a parent section's body would run through all nested child headings of any deeper level.
+
+### The fix
+
+Changed the logic to stop at the **next heading of any level**:
+
+```ts
+for (let j = i + 1; j < headings.length; j++) {
+  // Stop at the next heading of any level to prevent child heading content
+  // from appearing in parent body
+  endIndex = headings[j].index;
+  break;
+}
+```
+
+Now each section contains only the content directly under its heading, up to (but not including) the next heading regardless of level. Child headings remain in the flat sections array and are rendered as separate collapsible rows.
+
+### Result
+
+- Each piece of content appears exactly once
+- Parent sections show only their direct content
+- Child sections render independently as collapsible rows
+- The outline continues to list all headings for navigation
