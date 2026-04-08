@@ -232,7 +232,7 @@ export function CollapsibleMarkdown({
 
   if (!parsed || parsed.sections.length < 2) {
     return (
-      <div className={className}>
+      <div className={`markdown-viewer ${className}`}>
         <Markdown remarkPlugins={[remarkGfm]} components={components} skipHtml={false}>
           {content}
         </Markdown>
@@ -243,7 +243,7 @@ export function CollapsibleMarkdown({
   const allExpanded = expandedIds.size === parsed.sections.length && parsed.sections.length > 0;
 
   return (
-    <div className={className}>
+    <div className={`markdown-viewer ${className}`}>
       <div className="mb-4 rounded-xl border border-gh-border bg-gh-surface/20 p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-medium uppercase tracking-wide text-gh-muted">Sections</p>
