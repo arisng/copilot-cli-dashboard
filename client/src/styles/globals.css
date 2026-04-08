@@ -58,4 +58,121 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #58a6ff;
   }
+
+  /* Inline code inside paragraphs should not create block-level boxes */
+  p > code {
+    display: inline !important;
+  }
+
+  /* Inline code inside list items */
+  li > code,
+  li > p > code,
+  li > strong > code,
+  li > em > code,
+  li > span > code,
+  li > a > code {
+    display: inline !important;
+  }
+
+  /* Inline code inside inline formatting elements */
+  strong > code,
+  em > code,
+  del > code,
+  a > code,
+  span > code,
+  label > code,
+  small > code,
+  b > code,
+  i > code,
+  u > code,
+  mark > code,
+  ins > code,
+  sub > code,
+  sup > code {
+    display: inline !important;
+  }
+
+  /* Inline code inside headings */
+  h1 > code,
+  h2 > code,
+  h3 > code,
+  h4 > code,
+  h5 > code,
+  h6 > code,
+  h1 > a > code,
+  h2 > a > code,
+  h3 > a > code,
+  h4 > a > code,
+  h5 > a > code,
+  h6 > a > code {
+    display: inline !important;
+  }
+
+  /* Inline code inside table cells */
+  td > code,
+  th > code,
+  td > p > code,
+  th > p > code,
+  td > strong > code,
+  th > strong > code,
+  td > em > code,
+  th > em > code,
+  td > a > code,
+  th > a > code {
+    display: inline !important;
+  }
+
+  /* Inline code inside blockquotes */
+  blockquote > code,
+  blockquote > p > code,
+  blockquote > strong > code,
+  blockquote > em > code {
+    display: inline !important;
+  }
+
+  /* Inline code inside any other common inline contexts */
+  .markdown-body code:not(pre code),
+  [class*="markdown"] code:not(pre code),
+  article code:not(pre code),
+  .prose code:not(pre code) {
+    display: inline !important;
+  }
+
+  /* Ensure ul > li has same spacing as ol > li */
+  ul > li {
+    padding-top: 0.125rem !important;
+    padding-bottom: 0.125rem !important;
+    margin-bottom: 0.375rem !important;
+  }
+
+  /* Ensure nested lists in ul have proper indentation */
+  ul > li > ul,
+  ul > li > ol {
+    margin-left: 1rem !important;
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  /* Ensure ol > li > ul also has consistent spacing */
+  ol > li > ul,
+  ol > li > ol {
+    margin-left: 1rem !important;
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  /* Consistent list item markers for ul */
+  ul > li::before {
+    content: "›" !important;
+    color: #58a6ff !important;
+    font-weight: 700 !important;
+  }
+
+  /* Ensure both ul>li and ol>li have consistent text styling */
+  ul > li,
+  ol > li {
+    font-size: 0.875rem !important;
+    line-height: 1.25rem !important;
+    color: #e6edf3 !important;
+  }
 }
