@@ -7,6 +7,8 @@ import { RelativeTime } from '../shared/RelativeTime.tsx';
 
 interface Props {
   messages: ParsedMessage[];
+  isFullScreen?: boolean;
+  onToggleFullScreen?: () => void;
 }
 
 interface ViewportState {
@@ -517,7 +519,7 @@ function NodeDetailsPanel({ node, onClose }: { node: WorkflowNode; onClose: () =
 }
 
 // Main workflow topology view
-export function WorkflowTopologyView({ messages }: Props) {
+export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleFullScreen }: Props) {
   const turnOptions = useMemo(() => buildTurnOptions(messages), [messages]);
   const [selectedTurnId, setSelectedTurnId] = useState<string>(() => 
     turnOptions[turnOptions.length - 1]?.turnId ?? ''
@@ -586,6 +588,24 @@ export function WorkflowTopologyView({ messages }: Props) {
                 </option>
               ))}
             </select>
+            {onToggleFullScreen && (
+              <button
+                type="button"
+                onClick={onToggleFullScreen}
+                title={isFullScreen ? 'Exit full screen' : 'Full screen'}
+                className="inline-flex items-center justify-center rounded-md border border-gh-border bg-gh-bg p-1.5 text-gh-muted transition-colors hover:border-gh-accent hover:text-gh-text focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70"
+              >
+                {isFullScreen ? (
+                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M5.5 1.5A1.5 1.5 0 0 0 4 3v2.5h1V3a.5.5 0 0 1 .5-.5h2.5V1.5H5.5Zm5 0V1H8v1.5h2.5V6h1V3a.5.5 0 0 0-.5-.5h-2.5Zm-5 13A1.5 1.5 0 0 1 4 13v-2.5h1V13a.5.5 0 0 0 .5.5h2.5V15H5.5Zm5 0V15H8v-1.5h2.5V10h1v3a.5.5 0 0 1-.5.5h-2.5Z"/>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M1.5 1h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0V2H1.5a.5.5 0 0 1 0-1Zm11 0h-2a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 1 0V2h1.5a.5.5 0 0 0 0-1Zm-11 14h2a.5.5 0 0 0 .5-.5v-2a.5.5 0 0 0-1 0v1.5H1.5a.5.5 0 0 0 0 1Zm11 0h-2a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 1 0v1.5h1.5a.5.5 0 0 1 0 1Z"/>
+                  </svg>
+                )}
+              </button>
+            )}
           </div>
         </div>
         
