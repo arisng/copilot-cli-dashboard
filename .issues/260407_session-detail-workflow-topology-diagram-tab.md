@@ -2,7 +2,7 @@
 type: Feature Plan
 title: Add a workflow topology diagram tab to Session Detail
 description: Visualize how a specific turn is resolved as a node-based workflow diagram in a minimal canvas playground.
-status: Proposed
+status: Completed
 author: GitHub Copilot
 date: 2026-04-07
 priority: Medium
@@ -40,24 +40,24 @@ The diagram should be node-based, with nodes representing agents and tool calls 
 
 ## Requirements
 
-- [ ] Add a new Session Detail tab and panel for workflow topology.
-- [ ] Define how the view selects the specific turn to visualize.
-- [ ] Build a node model for user prompts, agents, tool calls, and the final result.
-- [ ] Attach agent metadata including `agent_id`, `agent_type`, and task summary where available.
-- [ ] Attach tool metadata where available, including the call relationship to the surrounding workflow.
-- [ ] Render the graph in a canvas-based viewer with minimal controls.
-- [ ] Keep the tab consistent with existing Session Detail layout behavior.
-- [ ] Handle missing or partial data gracefully with a clear empty state.
-- [ ] Add test coverage or fixture data for at least one representative turn.
+- [x] Add a new Session Detail tab and panel for workflow topology.
+- [x] Define how the view selects the specific turn to visualize.
+- [x] Build a node model for user prompts, agents, tool calls, and the final result.
+- [x] Attach agent metadata including `agent_id`, `agent_type`, and task summary where available.
+- [x] Attach tool metadata where available, including the call relationship to the surrounding workflow.
+- [x] Render the graph in a canvas-based viewer with minimal controls.
+- [x] Keep the tab consistent with existing Session Detail layout behavior.
+- [x] Handle missing or partial data gracefully with a clear empty state.
+- [x] Add test coverage or fixture data for at least one representative turn.
 
 ## Acceptance Criteria
 
-- [ ] A new tab appears in Session Detail without breaking the existing tab rail.
-- [ ] The tab renders a node-based workflow diagram for a specific turn.
-- [ ] The diagram starts with the user's prompt and ends with the final result.
-- [ ] Agent and tool nodes display the requested metadata when available.
-- [ ] The viewer is lightweight and does not expose unnecessary editing affordances.
-- [ ] Partial data or missing metadata degrades gracefully.
+- [x] A new tab appears in Session Detail without breaking the existing tab rail.
+- [x] The tab renders a node-based workflow diagram for a specific turn.
+- [x] The diagram starts with the user's prompt and ends with the final result.
+- [x] Agent and tool nodes display the requested metadata when available.
+- [x] The viewer is lightweight and does not expose unnecessary editing affordances.
+- [x] Partial data or missing metadata degrades gracefully.
 
 ## Open Questions
 
