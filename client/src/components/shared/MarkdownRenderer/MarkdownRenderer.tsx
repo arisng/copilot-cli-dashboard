@@ -160,15 +160,15 @@ export const desktopMarkdownComponents: Components = {
   em: ({ children }) => <em className={baseTextClasses.em}>{children}</em>,
   del: ({ children }) => <del className={baseTextClasses.del}>{children}</del>,
   
-  // List handling with proper nesting support
+  // List handling with proper nesting support - ensures deep nesting works
   ul: ({ children, ...props }) => (
-    <ul className="space-y-1 mb-3 pl-0 list-none [&_ul]:ml-4 [&_ol]:ml-4" {...props}>
+    <ul className="space-y-1 mb-3 pl-0 list-none [&_ul]:ml-4 [&_ol]:ml-4 [&_li]:ml-0" {...props}>
       {children}
     </ul>
   ),
   
   ol: ({ children, ...props }) => (
-    <ol className="space-y-1.5 mb-3 pl-0 list-none counter-reset-[item] [&_ul]:ml-4 [&_ol]:ml-4" {...props}>
+    <ol className="space-y-1.5 mb-3 pl-0 list-none counter-reset-[item] [&_ul]:ml-4 [&_ol]:ml-4 [&_li]:ml-0" {...props}>
       {children}
     </ol>
   ),
@@ -180,16 +180,46 @@ export const desktopMarkdownComponents: Components = {
       (c) => typeof c === 'object' && c !== null && (c as React.ReactElement)?.type === 'input'
     );
     
-    // Check if this li contains nested lists (ul or ol)
-    const hasNestedList = childArr.some(
-      (c) => typeof c === 'object' && c !== null && 
-        ((c as React.ReactElement)?.type === 'ul' || (c as React.ReactElement)?.type === 'ol')
-    );
+    // Helper to check if element is a list (ul or ol) - handles both string types and components
+    const isListElement = (c: unknown): boolean => {
+      if (typeof c !== 'object' || c === null) return false;
+      const el = c as React.ReactElement;
+      const type = el?.type;
+      // Check for HTML tag names or component names
+      return type === 'ul' || type === 'ol' || 
+             (typeof type === 'function' && (type.name === 'ul' || type.name === 'ol'));
+    };
+    
+    // Recursively check for nested lists at any depth in children
+    const hasNestedListDeep = (nodes: unknown[]): boolean => {
+      for (const node of nodes) {
+        if (isListElement(node)) return true;
+        // Check children of the node recursively
+        if (typeof node === 'object' && node !== null) {
+          const el = node as React.ReactElement;
+          if (el.props?.children) {
+            const childNodes = Array.isArray(el.props.children) 
+              ? el.props.children 
+              : [el.props.children];
+            if (hasNestedListDeep(childNodes)) return true;
+          }
+        }
+      }
+      return false;
+    };
+    
+    const hasNestedList = hasNestedListDeep(childArr);
     
     // Check if there are multiple block-level children (e.g., p + ul)
-    // that need to stack vertically instead of inline
+    const blockTypes = new Set(['p', 'div', 'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol']);
     const hasMultipleBlockChildren = childArr.filter(
-      (c) => typeof c === 'object' && c !== null && !['input', 'span', 'strong', 'em', 'code', 'a', 'del'].includes((c as React.ReactElement)?.type as string)
+      (c) => {
+        if (typeof c !== 'object' || c === null) return false;
+        const el = c as React.ReactElement;
+        const type = el?.type;
+        return blockTypes.has(type as string) || 
+               (typeof type === 'function' && blockTypes.has(type.name));
+      }
     ).length > 1;
     
     if (hasCheckbox) {
@@ -201,10 +231,11 @@ export const desktopMarkdownComponents: Components = {
     }
     
     // For items with nested lists or multiple block children, use block layout
+    // This ensures ol > li > p + (ul > li > ul) renders properly at all depths
     if (hasNestedList || hasMultipleBlockChildren) {
       return (
         <li 
-          className="text-sm text-gh-text py-0.5 pl-4 relative before:content-['›'] before:text-gh-accent before:font-bold before:absolute before:left-0 before:top-0.5 [&>p]:mb-2 [&>p:last-child]:mb-0" 
+          className="text-sm text-gh-text py-0.5 pl-4 relative before:content-['›'] before:text-gh-accent before:font-bold before:absolute before:left-0 before:top-0.5 [&_p]:mb-2 [&_p:last-child]:mb-0" 
           {...props}
         >
           {children}
