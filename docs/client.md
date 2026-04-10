@@ -130,6 +130,51 @@ import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 - Tables on mobile require horizontal scrolling for wide content
 - Code blocks don't have line numbers
 
+## Workflow Topology View
+
+`WorkflowTopologyView.tsx` renders a turn-by-turn orchestration graph for a selected session turn. The pipeline has two phases.
+
+### Phase 1 — `buildMultiTurnGraph(messages)`
+
+Builds raw `WorkflowRound[]` from `ParsedMessage[]`. Each assistant turn with tool requests becomes a round containing:
+- A `type: 'main-agent'` orchestrator node.
+- One response node per tool request:
+  - `task` / `read_agent` → `type: 'tool-call'` with `metadata.dispatch.family = 'agent-management'` and `metadata.backgroundMode = (args.mode === 'background')`.
+  - `shell` with `detached: true` → `type: 'detached-shell'`.
+  - `task_complete`, `exit_plan_mode` → `type: 'main-agent'` (orchestration, not a separate worker).
+  - Everything else → `type: 'tool-call'`.
+
+### Phase 2 — Enrichment (useMemo)
+
+After Phase 1, the `activeSubAgents` array from the server is indexed by `toolCallId`. Each Phase 1 `tool-call` node whose `metadata.toolCallId` matches an `ActiveSubAgent` entry is **upgraded in-place** to `type: 'sub-agent'` with server-side lifecycle data (label, model, status). The `backgroundMode` flag stored in Phase 1 metadata drives `metadata.backgroundInfo.detached` in Phase 2, which controls the "BACKGROUND TASK" badge.
+
+### Node Type → Badge / Color
+
+| `type` | `backgroundInfo.detached` | Badge | Border color |
+|--------|--------------------------|-------|--------------|
+| `user-prompt` | — | — | `gh-accent` blue |
+| `main-agent` | — | ORCHESTRATOR | purple |
+| `tool-call` | — | TOOL CALL | `gh-muted` grey (indigo for `agent-management`) |
+| `sub-agent` | `false` | SUB AGENT | sky-400 |
+| `sub-agent` | `true` | BACKGROUND TASK | sky-500 (brighter) |
+| `detached-shell` | — | DETACHED SHELL | amber |
+| `result` | — | — | `gh-active` green |
+
+### Filter Behavior
+
+`applyNodeFilter(enrichedRounds, ...)` is called on the enriched output. Core nodes (`user-prompt`, `main-agent`, `result`) are never hidden.
+
+| Filter | Hidden types |
+|--------|-------------|
+| `agents-only` | `tool-call` |
+| `tools-only` | `sub-agent`, `detached-shell` |
+
+Additional `agentTypes` and `dispatchFamilies` filters use normalized taxonomy fields from node metadata.
+
+### Model Provenance
+
+Inferred models (source `'inferred'`) are shown with a `~` prefix and lighter colour. Authoritative models (source `'dispatch-override'` or `'custom-agent-default'`) are shown without the prefix.
+
 ## MessageBubble Tool Rendering
 
 Specialised components for known tool types — fall back to generic `ToolCallBlock`:
