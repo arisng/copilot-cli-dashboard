@@ -15,19 +15,19 @@ On Linux and WSL this is typically `~/.copilot/session-state/<uuid>/events.jsonl
 
 ## Key event types
 
-| Event | When emitted |
-|-------|-------------|
-| `session.start` | Session initialised |
-| `session.shutdown` | Session ended cleanly |
-| `session.task_complete` | Agent completed a task |
-| `session.model_change` | Model switched mid-session |
-| `user.message` | User sent a message |
-| `assistant.message` | Agent replied and may include `toolRequests[]` |
-| `assistant.turn_start` | Agent started processing |
-| `assistant.turn_end` | Agent finished processing |
-| `tool.execution_start` | Tool call started |
-| `tool.execution_complete` | Tool call finished with `result` or `error` |
-| `abort` | User cancelled the current operation |
+| Event                     | When emitted                                   |
+| ------------------------- | ---------------------------------------------- |
+| `session.start`           | Session initialised                            |
+| `session.shutdown`        | Session ended cleanly                          |
+| `session.task_complete`   | Agent completed a task                         |
+| `session.model_change`    | Model switched mid-session                     |
+| `user.message`            | User sent a message                            |
+| `assistant.message`       | Agent replied and may include `toolRequests[]` |
+| `assistant.turn_start`    | Agent started processing                       |
+| `assistant.turn_end`      | Agent finished processing                      |
+| `tool.execution_start`    | Tool call started                              |
+| `tool.execution_complete` | Tool call finished with `result` or `error`    |
+| `abort`                   | User cancelled the current operation           |
 
 ## `ask_user` tool schemas
 
