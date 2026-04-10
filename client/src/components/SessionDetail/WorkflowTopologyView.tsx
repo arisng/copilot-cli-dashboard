@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { ParsedMessage, ToolRequest, WorkflowNode, WorkflowEdge, WorkflowGraph, WorkflowNodeDispatchMetadata, ActiveSubAgent } from '../../api/client.ts';
 import { buildTurnOptions } from '../../utils/messageFilters.ts';
 import { RelativeTime } from '../shared/RelativeTime.tsx';
+import { MultiSelectDropdown } from '../shared/MessageFilterBar.tsx';
 
 // Workflow topology diagram view for visualizing turn execution as multi-turn orchestration
 
@@ -37,8 +38,8 @@ type NodeTypeFilter = 'all' | 'agents-only' | 'tools-only';
 // New filter types for AMTP v2 refined taxonomy
 interface FilterState {
   nodeType: NodeTypeFilter;
-  agentTypes: string[];  // Filter by agentType (coder, explorer, orchestrator, etc.)
-  dispatchFamilies: string[];  // Filter by dispatch.family
+  agentTypes: string[];  // Filter by agentType (background sub-agents only)
+  tools: string[];       // Filter by tool name (replaces dispatchFamilies)
 }
 
 // Helper to determine dispatch family from tool name and arguments
@@ -565,19 +566,20 @@ function applyNodeFilter(
     });
   }
 
-  // Apply dispatch family filter (only to non-core nodes)
-  if (filter.dispatchFamilies.length > 0) {
+  // Apply tool filter (only to tool-call nodes; core nodes always pass)
+  if (filter.tools.length > 0) {
     filteredNodes = filteredNodes.filter(n => {
       if (CORE_NODE_TYPES.has(n.type)) return true;
-      const family = n.metadata?.dispatch?.family;
-      return family && filter.dispatchFamilies.includes(family);
+      if (n.type !== 'tool-call') return true; // only filter tool-call nodes
+      const toolName = n.metadata?.toolName || n.label;
+      return toolName && filter.tools.includes(toolName);
     });
   }
 
   // Path-pruning: when agent-type or family filters are active, remove main-agent
   // (Orchestrator) nodes whose rounds have no surviving response nodes.
   // This keeps only the orchestrators that actually participate in filtered paths.
-  const hasSpecificFilter = filter.agentTypes.length > 0 || filter.dispatchFamilies.length > 0;
+  const hasSpecificFilter = filter.agentTypes.length > 0 || filter.tools.length > 0;
   if (hasSpecificFilter) {
     const survivingResponseIds = new Set(
       filteredNodes.filter(n => !CORE_NODE_TYPES.has(n.type)).map(n => n.id)
@@ -1273,9 +1275,8 @@ function NodeDetailsPanel({ node, onClose }: {
   );
 }
 
-// Canonical ordering for agent types and dispatch families
+// Canonical ordering for agent types
 const AGENT_TYPE_ORDER = ['coder', 'explorer', 'planner', 'reviewer', 'tester', 'writer', 'orchestrator'];
-const DISPATCH_FAMILY_ORDER = ['agent-management', 'orchestration', 'execution', 'tool'];
 
 // Filter control component — receives dynamically derived option lists from the graph data
 function FilterControl({
@@ -1283,26 +1284,19 @@ function FilterControl({
   onChange,
   nodeCounts,
   availableAgentTypes,
-  availableDispatchFamilies,
+  availableTools,
 }: {
   filter: FilterState;
   onChange: (filter: FilterState) => void;
   nodeCounts: { all: number; agentsOnly: number; toolsOnly: number };
   availableAgentTypes: string[];
-  availableDispatchFamilies: string[];
+  availableTools: string[];
 }) {
   const toggleAgentType = (agentType: string) => {
     const newTypes = filter.agentTypes.includes(agentType)
       ? filter.agentTypes.filter(t => t !== agentType)
       : [...filter.agentTypes, agentType];
     onChange({ ...filter, agentTypes: newTypes });
-  };
-
-  const toggleDispatchFamily = (family: string) => {
-    const newFamilies = filter.dispatchFamilies.includes(family)
-      ? filter.dispatchFamilies.filter(f => f !== family)
-      : [...filter.dispatchFamilies, family];
-    onChange({ ...filter, dispatchFamilies: newFamilies });
   };
 
   return (
@@ -1374,34 +1368,15 @@ function FilterControl({
       </div>
       )}
 
-      {/* Dispatch family filter — chips derived dynamically from graph data */}
-      {availableDispatchFamilies.length > 0 && (
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-gh-muted mr-1">Tool Family:</span>
-        {availableDispatchFamilies.map(family => (
-          <button
-            key={family}
-            onClick={() => toggleDispatchFamily(family)}
-            className={`px-2 py-0.5 text-[10px] rounded transition-colors border ${
-              filter.dispatchFamilies.includes(family)
-                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                : 'bg-gh-bg border-gh-border text-gh-muted hover:text-gh-text'
-            }`}
-            title={`Filter by ${family}`}
-          >
-            {family}
-          </button>
-        ))}
-        {filter.dispatchFamilies.length > 0 && (
-          <button
-            onClick={() => onChange({ ...filter, dispatchFamilies: [] })}
-            className="text-[10px] text-gh-muted hover:text-gh-attention ml-1"
-            title="Clear family filter"
-          >
-            Clear
-          </button>
-        )}
-      </div>
+      {/* Tool filter — dropdown showing tool names for the current turn */}
+      {availableTools.length > 0 && (
+        <MultiSelectDropdown
+          label="Tool"
+          options={availableTools}
+          selected={filter.tools}
+          onChange={(tools) => onChange({ ...filter, tools })}
+          placeholder="All tools"
+        />
       )}
     </div>
   );
@@ -1422,7 +1397,7 @@ export function WorkflowTopologyView({
   const [filter, setFilter] = useState<FilterState>({
     nodeType: 'all',
     agentTypes: [],
-    dispatchFamilies: [],
+    tools: [],
   });
 
   // Update selected turn when turns change
@@ -1514,12 +1489,13 @@ export function WorkflowTopologyView({
     return { all: allCount, agentsOnly: agentsOnlyCount, toolsOnly: toolsOnlyCount };
   }, [enrichedNodes]);
 
-  // Derive available filter options from graph data (only show chips that exist in the current turn)
+  // Derive available agent types from sub-agent nodes only (background tasks; exclude orchestrator and tools)
   const availableAgentTypes = useMemo(() => {
     const types = new Set<string>();
     enrichedNodes.forEach(n => {
+      if (n.type !== 'sub-agent') return; // Only background sub-agents
       const t = n.agentType || extractAgentType(n);
-      if (t) types.add(t);
+      if (t && t !== 'orchestrator') types.add(t);
     });
     // Preserve canonical ordering; append unknown types alphabetically at the end
     return [
@@ -1528,26 +1504,28 @@ export function WorkflowTopologyView({
     ];
   }, [enrichedNodes]);
 
-  const availableDispatchFamilies = useMemo(() => {
-    const families = new Set<string>();
+  // Derive available tool names from tool-call nodes in the current turn (per-turn scope)
+  const availableTools = useMemo(() => {
+    const tools = new Set<string>();
     enrichedNodes.forEach(n => {
-      const family = n.metadata?.dispatch?.family;
-      if (family) families.add(family as string);
+      if (n.type !== 'tool-call') return;
+      const toolName = n.metadata?.toolName || n.label;
+      if (toolName) tools.add(toolName);
     });
-    return DISPATCH_FAMILY_ORDER.filter(f => families.has(f));
+    return [...tools].sort();
   }, [enrichedNodes]);
 
   // Clear stale filter selections when turn changes and new data lacks those values
   useEffect(() => {
     setFilter(prev => {
       const newAgentTypes = prev.agentTypes.filter(t => availableAgentTypes.includes(t));
-      const newFamilies = prev.dispatchFamilies.filter(f => availableDispatchFamilies.includes(f));
-      if (newAgentTypes.length === prev.agentTypes.length && newFamilies.length === prev.dispatchFamilies.length) {
+      const newTools = prev.tools.filter(t => availableTools.includes(t));
+      if (newAgentTypes.length === prev.agentTypes.length && newTools.length === prev.tools.length) {
         return prev;
       }
-      return { ...prev, agentTypes: newAgentTypes, dispatchFamilies: newFamilies };
+      return { ...prev, agentTypes: newAgentTypes, tools: newTools };
     });
-  }, [availableAgentTypes, availableDispatchFamilies]);
+  }, [availableAgentTypes, availableTools]);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) ?? null,
@@ -1584,7 +1562,7 @@ export function WorkflowTopologyView({
               onChange={setFilter}
               nodeCounts={nodeCounts}
               availableAgentTypes={availableAgentTypes}
-              availableDispatchFamilies={availableDispatchFamilies}
+              availableTools={availableTools}
             />
             <div className="w-px h-5 bg-gh-border mx-1" />
             <label className="text-xs text-gh-muted">Turn:</label>
@@ -1639,7 +1617,7 @@ export function WorkflowTopologyView({
               {rounds.length} round{rounds.length !== 1 ? 's' : ''}
             </span>
           )}
-          {(filter.agentTypes.length > 0 || filter.dispatchFamilies.length > 0) && (
+          {(filter.agentTypes.length > 0 || filter.tools.length > 0) && (
             <span className="flex items-center gap-1 text-gh-accent">
               <span className="w-2 h-2 rounded-full bg-gh-accent animate-pulse" />
               Filtered

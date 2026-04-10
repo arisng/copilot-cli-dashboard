@@ -22,7 +22,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
-function MultiSelectDropdown({
+export function MultiSelectDropdown({
   label,
   options,
   selected,
