@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import type { ParsedMessage, ToolRequest, WorkflowNode, WorkflowEdge, WorkflowGraph } from '../../api/client.ts';
+import type { ParsedMessage, ToolRequest, WorkflowNode, WorkflowEdge, WorkflowGraph, WorkflowNodeDispatchMetadata, ActiveSubAgent } from '../../api/client.ts';
 import { buildTurnOptions } from '../../utils/messageFilters.ts';
 import { RelativeTime } from '../shared/RelativeTime.tsx';
 
-// Workflow topology diagram view for visualizing a turn as a node-based graph
+// Workflow topology diagram view for visualizing turn execution as multi-turn orchestration
 
 interface Props {
   messages: ParsedMessage[];
+  activeSubAgents?: ActiveSubAgent[]; // Add this
   isFullScreen?: boolean;
   onToggleFullScreen?: () => void;
 }
@@ -24,87 +25,166 @@ interface NodePosition {
   height: number;
 }
 
-interface NodeGroup {
+interface WorkflowRound {
   id: string;
-  label: string;
-  type: 'tool-group' | 'agent-group';
-  nodeIds: string[];
-  isExpanded: boolean;
-  collapsedCount: number;
+  index: number;
+  mainAgentNode: WorkflowNode;
+  responseNodes: WorkflowNode[];
 }
 
-// Group similar nodes together
-function buildNodeGroups(nodes: WorkflowNode[]): NodeGroup[] {
-  const groups: NodeGroup[] = [];
-  const processedNodeIds = new Set<string>();
+type NodeTypeFilter = 'all' | 'agents-only' | 'tools-only';
 
-  // Group tool calls by tool name
-  const toolNodesByName = new Map<string, WorkflowNode[]>();
-  const agentNodes: WorkflowNode[] = [];
-
-  for (const node of nodes) {
-    if (node.type === 'tool-call') {
-      const existing = toolNodesByName.get(node.label) ?? [];
-      existing.push(node);
-      toolNodesByName.set(node.label, existing);
-    } else if (node.type === 'sub-agent') {
-      agentNodes.push(node);
-    }
-  }
-
-  // Create tool groups for tools with more than 1 occurrence
-  for (const [toolName, toolNodes] of toolNodesByName) {
-    if (toolNodes.length > 1) {
-      const group: NodeGroup = {
-        id: `group-tool-${toolName}`,
-        label: toolName,
-        type: 'tool-group',
-        nodeIds: toolNodes.map(n => n.id),
-        isExpanded: false,
-        collapsedCount: toolNodes.length,
-      };
-      groups.push(group);
-      toolNodes.forEach(n => processedNodeIds.add(n.id));
-    }
-  }
-
-  // Group sub-agents by agent type/prefix
-  const agentNodesByType = new Map<string, WorkflowNode[]>();
-  for (const node of agentNodes) {
-    const agentType = node.metadata?.agentType as string || 'agent';
-    const existing = agentNodesByType.get(agentType) ?? [];
-    existing.push(node);
-    agentNodesByType.set(agentType, existing);
-  }
-
-  for (const [agentType, agents] of agentNodesByType) {
-    if (agents.length > 1) {
-      const group: NodeGroup = {
-        id: `group-agent-${agentType}`,
-        label: `${agentType} agents`,
-        type: 'agent-group',
-        nodeIds: agents.map(n => n.id),
-        isExpanded: false,
-        collapsedCount: agents.length,
-      };
-      groups.push(group);
-      agents.forEach(n => processedNodeIds.add(n.id));
-    }
-  }
-
-  return groups;
+// New filter types for AMTP v2 refined taxonomy
+interface FilterState {
+  nodeType: NodeTypeFilter;
+  agentTypes: string[];  // Filter by agentType (coder, explorer, orchestrator, etc.)
+  dispatchFamilies: string[];  // Filter by dispatch.family
 }
 
-// Build workflow graph from messages for a specific turn
-function buildWorkflowGraph(messages: ParsedMessage[]): WorkflowGraph {
+// Helper to determine dispatch family from tool name and arguments
+function determineDispatchFamily(toolName: string, args: Record<string, unknown> | undefined): WorkflowNodeDispatchMetadata['family'] {
+  // Agent management tools
+  if (toolName === 'task') {
+    return 'agent-management';
+  }
+  if (toolName === 'read_agent') {
+    return 'agent-management';
+  }
+  
+  // Orchestration tools
+  if (toolName === 'task_complete') {
+    return 'orchestration';
+  }
+  if (toolName === 'exit_plan_mode') {
+    return 'orchestration';
+  }
+  if (toolName === 'plan_mode') {
+    return 'orchestration';
+  }
+  
+  // Shell/Execution tools
+  if (toolName === 'shell' || toolName === 'execute') {
+    return 'execution';
+  }
+  
+  // Default to tool family
+  return 'tool';
+}
+
+// Extract agent type from various sources using normalized taxonomy (AMTP v2)
+function extractAgentType(node: WorkflowNode): string | undefined {
+  if (node.type === 'user-prompt') return undefined;
+  if (node.type === 'result') return undefined;
+  
+  // For tool-call nodes with agent-management family, extract from metadata
+  if (node.type === 'tool-call' && node.metadata?.dispatch?.family === 'agent-management') {
+    const targetName = node.metadata?.agent?.targetName;
+    if (targetName) {
+      const lowerTarget = targetName.toLowerCase();
+      if (lowerTarget.includes('coder') || lowerTarget.includes('code') || lowerTarget.includes('dev')) return 'coder';
+      if (lowerTarget.includes('explore') || lowerTarget.includes('research') || lowerTarget.includes('find')) return 'explorer';
+      if (lowerTarget.includes('plan') || lowerTarget.includes('design') || lowerTarget.includes('architect')) return 'planner';
+      if (lowerTarget.includes('review') || lowerTarget.includes('audit') || lowerTarget.includes('check')) return 'reviewer';
+      if (lowerTarget.includes('test') || lowerTarget.includes('verify') || lowerTarget.includes('validate')) return 'tester';
+      if (lowerTarget.includes('doc') || lowerTarget.includes('write') || lowerTarget.includes('author')) return 'writer';
+      return targetName;
+    }
+  }
+  
+  // Use metadata.agent.targetName when available (authoritative)
+  const metadata = node.metadata;
+  if (metadata?.agent?.targetName) {
+    const targetName = metadata.agent.targetName.toLowerCase();
+    // Map common target names to agent types
+    if (targetName.includes('coder') || targetName.includes('code') || targetName.includes('dev')) return 'coder';
+    if (targetName.includes('explore') || targetName.includes('research') || targetName.includes('find')) return 'explorer';
+    if (targetName.includes('plan') || targetName.includes('design') || targetName.includes('architect')) return 'planner';
+    if (targetName.includes('review') || targetName.includes('audit') || targetName.includes('check')) return 'reviewer';
+    if (targetName.includes('test') || targetName.includes('verify') || targetName.includes('validate')) return 'tester';
+    if (targetName.includes('doc') || targetName.includes('write') || targetName.includes('author')) return 'writer';
+    if (targetName.includes('orchestrat') || targetName.includes('main') || targetName.includes('primary')) return 'orchestrator';
+    return metadata.agent.targetName; // Return as-is if no match
+  }
+  
+  // Fall back to node.agentType if already set
+  if (node.agentType) {
+    return node.agentType;
+  }
+  
+  if (node.type === 'main-agent') {
+    return 'orchestrator';
+  }
+  
+  if (node.type === 'sub-agent') {
+    // True background sub-agents - show as background task
+    if (node.metadata?.backgroundInfo?.detached) {
+      return 'background';
+    }
+    // Fall back to heuristic label parsing only when needed
+    const label = (node.label || '').toLowerCase();
+    if (label.includes('coder') || label.includes('code') || label.includes('dev')) return 'coder';
+    if (label.includes('explore') || label.includes('research') || label.includes('find')) return 'explorer';
+    if (label.includes('plan') || label.includes('design') || label.includes('architect')) return 'planner';
+    if (label.includes('review') || label.includes('audit') || label.includes('check')) return 'reviewer';
+    if (label.includes('test') || label.includes('verify') || label.includes('validate')) return 'tester';
+    if (label.includes('doc') || label.includes('write') || label.includes('author')) return 'writer';
+    // Return undefined instead of generic 'agent' for unknowns
+    return undefined;
+  }
+  
+  if (node.type === 'tool-call') {
+    // For agent-management tools, show the agent type
+    if (node.metadata?.dispatch?.family === 'agent-management') {
+      return extractAgentType(node); // Recursive call to get agent type from metadata
+    }
+    // Categorize other tools
+    const name = (node.label || '').toLowerCase();
+    if (name.includes('git')) return 'git';
+    if (name.includes('file') || name.includes('read') || name.includes('write')) return 'file';
+    if (name.includes('shell') || name.includes('exec') || name.includes('run')) return 'shell';
+    if (name.includes('search') || name.includes('grep') || name.includes('find')) return 'search';
+    return 'tool';
+  }
+  
+  if (node.type === 'detached-shell') {
+    return 'shell';
+  }
+  
+  return undefined;
+}
+
+// Extract model from agent ID (e.g., "audit-claude-sonnet-4-6" -> "claude-sonnet-4")
+// Returns undefined if no model can be inferred
+function extractModelFromAgentId(agentId: string): string | undefined {
+  const lower = agentId.toLowerCase();
+  
+  // Check for common model patterns
+  if (lower.includes('claude-opus')) return 'claude-opus-4';
+  if (lower.includes('claude-sonnet')) return 'claude-sonnet-4';
+  if (lower.includes('claude') && lower.includes('4')) return 'claude-4';
+  if (lower.includes('gpt-5')) return 'gpt-5';
+  if (lower.includes('gpt-4')) return 'gpt-4';
+  if (lower.includes('o3') || lower.includes('o1')) return 'o3-mini';
+  
+  return undefined;
+}
+
+// Build multi-turn workflow graph with refined AMTP v2 taxonomy
+function buildMultiTurnGraph(messages: ParsedMessage[]): {
+  rounds: WorkflowRound[];
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+} {
+  const rounds: WorkflowRound[] = [];
   const nodes: WorkflowNode[] = [];
   const edges: WorkflowEdge[] = [];
   let nodeId = 0;
-
+  
+  // Find user prompt and final result
   const userMessage = messages.find((m) => m.role === 'user');
   const assistantMessages = messages.filter((m) => m.role === 'assistant');
   const finalMessage = assistantMessages[assistantMessages.length - 1];
-
+  
   // Add user prompt node
   if (userMessage) {
     const preview = userMessage.content.trim().slice(0, 80);
@@ -116,70 +196,317 @@ function buildWorkflowGraph(messages: ParsedMessage[]): WorkflowGraph {
       timestamp: userMessage.timestamp,
     });
   }
-
-  // Collect all tool calls and sub-agents
+  
+  // Parse messages to build rounds
+  // Each assistant.message with toolRequests starts a new round
   const toolNodes = new Map<string, string>(); // toolCallId -> nodeId
-  const agentNodes = new Map<string, string>(); // agentId -> nodeId
-
-  for (const msg of messages) {
-    if (msg.role === 'assistant' && msg.toolRequests) {
-      for (const tool of msg.toolRequests) {
-        const isSubAgent = tool.name === 'task' || tool.name === 'read_agent';
-        
-        if (isSubAgent) {
-          const args = tool.arguments as { name?: string; agent_id?: string; description?: string } | undefined;
-          const agentId = args?.name || args?.agent_id || tool.toolCallId;
-          const description = args?.description || `${tool.name} call`;
-          
-          if (!agentNodes.has(agentId)) {
-            const node: WorkflowNode = {
-              id: `node-${nodeId++}`,
-              type: 'sub-agent',
-              label: agentId,
-              description,
-              metadata: {
-                toolName: tool.name,
-                toolCallId: tool.toolCallId,
-                agentType: args?.name ? 'named-task' : tool.name === 'read_agent' ? 'read-agent' : 'task',
-              },
-              status: tool.error ? 'error' : tool.result ? 'completed' : 'running',
-              timestamp: msg.timestamp,
-            };
-            nodes.push(node);
-            agentNodes.set(agentId, node.id);
-          }
-          toolNodes.set(tool.toolCallId, agentNodes.get(agentId)!);
-        } else {
-          const node: WorkflowNode = {
-            id: `node-${nodeId++}`,
-            type: 'tool-call',
-            label: tool.name,
-            description: tool.intentionSummary || tool.toolTitle || `Tool: ${tool.name}`,
-            metadata: {
-              toolCallId: tool.toolCallId,
-              arguments: tool.arguments,
-            },
-            status: tool.error ? 'error' : tool.result ? 'completed' : 'pending',
-            timestamp: msg.timestamp,
-          };
-          nodes.push(node);
-          toolNodes.set(tool.toolCallId, node.id);
+  
+  for (let i = 0; i < assistantMessages.length; i++) {
+    const msg = assistantMessages[i];
+    const isLast = i === assistantMessages.length - 1;
+    
+    // Check if this is a "final result" message (no tool requests, last message)
+    if (isLast && (!msg.toolRequests || msg.toolRequests.length === 0)) {
+      // This is the final result
+      const resultNode: WorkflowNode = {
+        id: `node-${nodeId++}`,
+        type: 'result',
+        label: 'Final Result',
+        description: msg.content.trim().slice(0, 100) || 'Response generated',
+        timestamp: msg.timestamp,
+      };
+      nodes.push(resultNode);
+      
+      // Connect from last round's main agent or responses
+      if (rounds.length > 0) {
+        const lastRound = rounds[rounds.length - 1];
+        edges.push({
+          id: `edge-result`,
+          from: lastRound.mainAgentNode.id,
+          to: resultNode.id,
+        });
+      }
+      break;
+    }
+    
+    // This is a main agent turn (orchestrator)
+    const roundIndex = rounds.length;
+    const mainAgentDescription = msg.content.trim().slice(0, 60) || 'Processing...';
+    
+    // Skip orchestrator nodes with only "Processing..." content
+    const isProcessingOnly = !msg.content.trim() || msg.content.trim() === 'Processing...';
+    
+    // Extract model info from message metadata if available
+    const messageMetadata = (msg as unknown as Record<string, unknown>).metadata as Record<string, unknown> | undefined;
+    const messageModel = messageMetadata?.model as { name?: string; source?: string } | undefined;
+    
+    const mainAgentNode: WorkflowNode = {
+      id: `node-${nodeId++}`,
+      type: 'main-agent',
+      label: `Main Agent${roundIndex > 0 ? ` (${roundIndex + 1})` : ''}`,
+      agentType: 'orchestrator',
+      description: mainAgentDescription,
+      metadata: {
+        toolName: 'orchestrator',
+        model: messageModel ? {
+          name: messageModel.name || null,
+          source: messageModel.source || null,
+        } : undefined,
+      },
+      timestamp: msg.timestamp,
+      roundIndex,
+      isMainAgent: true,
+    };
+    
+    // Skip adding this main agent node if it's just "Processing..."
+    if (!isProcessingOnly) {
+      nodes.push(mainAgentNode);
+    } else {
+      // Use the previous round's main agent as the connection point, or skip if first round
+      if (roundIndex === 0) {
+        // First round with no content - skip this entire round
+        continue;
+      }
+      // Otherwise, connect tools to previous round's main agent
+    }
+    
+    // Connect from previous round's responses or user prompt (only if main agent wasn't skipped)
+    if (!isProcessingOnly) {
+      if (roundIndex === 0) {
+        if (userMessage && nodes.length > 1) {
+          edges.push({
+            id: `edge-user-to-round${roundIndex}`,
+            from: nodes[0].id,
+            to: mainAgentNode.id,
+          });
+        }
+      } else {
+        // Connect from previous round's main agent
+        const prevRound = rounds[roundIndex - 1];
+        if (prevRound) {
+          edges.push({
+            id: `edge-round${roundIndex - 1}-to-${roundIndex}`,
+            from: prevRound.mainAgentNode.id,
+            to: mainAgentNode.id,
+          });
         }
       }
     }
+    
+    // Collect response nodes (sub-agents and tools)
+    const responseNodes: WorkflowNode[] = [];
+    
+    if (msg.toolRequests) {
+      for (const tool of msg.toolRequests) {
+        const family = determineDispatchFamily(tool.name, tool.arguments);
+        const isAgentManagementTool = tool.name === 'task' || tool.name === 'read_agent';
+        
+        // AMTP v2: Agent-management tools create tool-call nodes (NOT sub-agent)
+        if (isAgentManagementTool) {
+          const args = tool.arguments as { 
+            name?: string; 
+            agent_id?: string; 
+            description?: string;
+            model?: string;
+            mode?: string;
+          } | undefined;
+          
+          // agentId is the custom name from args.name or args.agent_id
+          const agentId = args?.name || args?.agent_id || tool.toolCallId;
+          const description = args?.description || `${tool.name} call`;
+          
+          // agentName is the custom agent name (e.g., "Coder", "rubber-duck")
+          const agentName = args?.name || args?.agent_id;
+          
+          // Use metadata.model when available (authoritative), otherwise fall back to args.model
+          let model: string | undefined;
+          let modelSource: string | undefined;
+          
+          if (args?.model) {
+            model = args.model;
+            modelSource = 'args';
+          } else {
+            // Fall back to inference from agentId
+            const inferred = extractModelFromAgentId(agentId);
+            if (inferred) {
+              model = inferred;
+              modelSource = 'inferred';
+            }
+          }
+          
+          // Determine agent type from targetName if available
+          const targetName = args?.name || args?.agent_id;
+          let agentType: string | undefined;
+          if (targetName) {
+            const lowerTarget = targetName.toLowerCase();
+            if (lowerTarget.includes('coder') || lowerTarget.includes('code') || lowerTarget.includes('dev')) agentType = 'coder';
+            else if (lowerTarget.includes('explore') || lowerTarget.includes('research') || lowerTarget.includes('find')) agentType = 'explorer';
+            else if (lowerTarget.includes('plan') || lowerTarget.includes('design') || lowerTarget.includes('architect')) agentType = 'planner';
+            else if (lowerTarget.includes('review') || lowerTarget.includes('audit') || lowerTarget.includes('check')) agentType = 'reviewer';
+            else if (lowerTarget.includes('test') || lowerTarget.includes('verify') || lowerTarget.includes('validate')) agentType = 'tester';
+            else if (lowerTarget.includes('doc') || lowerTarget.includes('write') || lowerTarget.includes('author')) agentType = 'writer';
+          }
+          
+          // AMTP v2: Agent-management tools are dispatch tool-calls
+          // They get upgraded to sub-agent by the enrichment step when server has worker data
+          const toolCallNode: WorkflowNode = {
+            id: `node-${nodeId++}`,
+            type: 'tool-call',
+            label: agentId,
+            agentType,
+            agentName,
+            model,
+            description,
+            metadata: {
+              toolCallId: tool.toolCallId,
+              toolName: tool.name,
+              dispatch: {
+                toolName: tool.name,
+                family: 'agent-management',
+                toolCallId: tool.toolCallId,
+              },
+              agent: targetName ? {
+                targetName,
+                targetKind: tool.name === 'task' ? 'task-agent' : 'read-agent',
+                instanceId: tool.toolCallId,
+              } : undefined,
+              model: model ? {
+                name: model,
+                source: modelSource || 'unknown',
+              } : undefined,
+              backgroundMode: args?.mode === 'background',
+            },
+            status: tool.error ? 'error' : tool.result ? 'completed' : 'running',
+            timestamp: msg.timestamp,
+            roundIndex,
+            isMainAgent: false,
+          };
+          nodes.push(toolCallNode);
+          responseNodes.push(toolCallNode);
+          toolNodes.set(tool.toolCallId, toolCallNode.id);
+          
+          // Edge from main agent to tool-call (use previous round if current is skipped)
+          const sourceNodeId = isProcessingOnly && roundIndex > 0 
+            ? rounds[roundIndex - 1]?.mainAgentNode.id 
+            : mainAgentNode.id;
+          if (sourceNodeId) {
+            edges.push({
+              id: `edge-dispatch-${tool.toolCallId}`,
+              from: sourceNodeId,
+              to: toolCallNode.id,
+            });
+          }
+        } else if (tool.name === 'shell' && tool.arguments?.detached === true) {
+          // AMTP v2: Detached shell execution creates detached-shell node
+          const args = tool.arguments as { 
+            command?: string;
+            description?: string;
+            detached?: boolean;
+            processId?: string;
+          } | undefined;
+          
+          const description = args?.description || args?.command || 'Detached shell execution';
+          
+          const detachedShellNode: WorkflowNode = {
+            id: `node-${nodeId++}`,
+            type: 'detached-shell',
+            label: 'Detached Shell',
+            description,
+            metadata: {
+              toolCallId: tool.toolCallId,
+              toolName: tool.name,
+              dispatch: {
+                toolName: tool.name,
+                family: 'execution',
+                toolCallId: tool.toolCallId,
+              },
+              backgroundInfo: {
+                detached: true,
+                processId: args?.processId,
+              },
+            },
+            status: tool.error ? 'error' : tool.result ? 'completed' : 'running',
+            timestamp: msg.timestamp,
+            roundIndex,
+            isMainAgent: false,
+          };
+          nodes.push(detachedShellNode);
+          responseNodes.push(detachedShellNode);
+          toolNodes.set(tool.toolCallId, detachedShellNode.id);
+          
+          // Edge from main agent to detached-shell
+          const sourceNodeId = isProcessingOnly && roundIndex > 0 
+            ? rounds[roundIndex - 1]?.mainAgentNode.id 
+            : mainAgentNode.id;
+          if (sourceNodeId) {
+            edges.push({
+              id: `edge-dispatch-${tool.toolCallId}`,
+              from: sourceNodeId,
+              to: detachedShellNode.id,
+            });
+          }
+        } else {
+          // tool_complete is handled as orchestration, not a sub-agent node
+          const isOrchestration = family === 'orchestration';
+          
+          const toolNode: WorkflowNode = {
+            id: `node-${nodeId++}`,
+            type: isOrchestration ? 'main-agent' : 'tool-call',
+            label: tool.name,
+            agentType: isOrchestration ? 'orchestrator' : extractAgentType({ type: 'tool-call', label: tool.name } as WorkflowNode),
+            description: tool.intentionSummary || tool.toolTitle || `Tool: ${tool.name}`,
+            metadata: {
+              toolCallId: tool.toolCallId,
+              toolName: tool.name,
+              dispatch: {
+                toolName: tool.name,
+                family,
+                toolCallId: tool.toolCallId,
+              },
+            },
+            status: tool.error ? 'error' : tool.result ? 'completed' : 'pending',
+            timestamp: msg.timestamp,
+            roundIndex,
+            isMainAgent: isOrchestration,
+          };
+          nodes.push(toolNode);
+          responseNodes.push(toolNode);
+          toolNodes.set(tool.toolCallId, toolNode.id);
+          
+          // Edge from main agent to tool (use previous round if current is skipped)
+          const sourceNodeId = isProcessingOnly && roundIndex > 0 
+            ? rounds[roundIndex - 1]?.mainAgentNode.id 
+            : mainAgentNode.id;
+          if (sourceNodeId) {
+            edges.push({
+              id: `edge-dispatch-${tool.toolCallId}`,
+              from: sourceNodeId,
+              to: toolNode.id,
+            });
+          }
+        }
+      }
+    }
+    
+    // Only add round if main agent node was not skipped (Processing... only)
+    if (!isProcessingOnly) {
+      rounds.push({
+        id: `round-${roundIndex}`,
+        index: roundIndex,
+        mainAgentNode,
+        responseNodes,
+      });
+    } else if (responseNodes.length > 0 && roundIndex > 0) {
+      // If main agent was skipped but we have responses, add them to previous round
+      const prevRound = rounds[roundIndex - 1];
+      if (prevRound) {
+        prevRound.responseNodes.push(...responseNodes);
+      }
+    }
   }
-
-  // Create edges between consecutive nodes
-  for (let i = 0; i < nodes.length - 1; i++) {
-    edges.push({
-      id: `edge-${i}`,
-      from: nodes[i].id,
-      to: nodes[i + 1].id,
-    });
-  }
-
-  // Add result node if we have a final assistant message
-  if (finalMessage && finalMessage !== assistantMessages[0]) {
+  
+  // If no final result node was created, create one from the last message
+  if (finalMessage && !nodes.some(n => n.type === 'result') && rounds.length > 0) {
     const resultNode: WorkflowNode = {
       id: `node-${nodeId++}`,
       type: 'result',
@@ -189,137 +516,138 @@ function buildWorkflowGraph(messages: ParsedMessage[]): WorkflowGraph {
     };
     nodes.push(resultNode);
     
-    // Connect last tool/agent to result
-    const lastToolNode = nodes.filter((n) => n.type === 'tool-call' || n.type === 'sub-agent').pop();
-    if (lastToolNode) {
-      edges.push({
-        id: `edge-result`,
-        from: lastToolNode.id,
-        to: resultNode.id,
-      });
-    } else if (nodes.length > 1) {
-      edges.push({
-        id: `edge-result`,
-        from: nodes[nodes.length - 2].id,
-        to: resultNode.id,
-      });
-    }
+    const lastRound = rounds[rounds.length - 1];
+    edges.push({
+      id: `edge-result`,
+      from: lastRound.mainAgentNode.id,
+      to: resultNode.id,
+    });
   }
-
-  return { nodes, edges };
+  
+  return { rounds, nodes, edges };
 }
 
-// Calculate node positions using a simple layered layout
-function calculateNodePositions(nodes: WorkflowNode[], groups: NodeGroup[], expandedGroups: Set<string>): Map<string, NodePosition> {
+// Apply node type filter to the graph
+// AMTP v2: Core nodes (user-prompt, main-agent, result) are always shown
+// Filters only apply to other node types (tool-call, sub-agent, detached-shell)
+function applyNodeFilter(
+  rounds: WorkflowRound[],
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  filter: FilterState,
+): { rounds: WorkflowRound[]; nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  // Core node types that are ALWAYS shown (not affected by filters)
+  const CORE_NODE_TYPES = new Set(['user-prompt', 'main-agent', 'result']);
+  
+  let filteredNodes = nodes;
+  
+  // Apply node type filter
+  if (filter.nodeType === 'agents-only') {
+    // Show: user-prompt, main-agent, sub-agent, detached-shell, result
+    // Hide: tool-call
+    const allowedTypes = new Set(['user-prompt', 'main-agent', 'sub-agent', 'detached-shell', 'result']);
+    filteredNodes = filteredNodes.filter(n => allowedTypes.has(n.type));
+  }
+
+  if (filter.nodeType === 'tools-only') {
+    // Show: user-prompt, main-agent, tool-call, result
+    // Hide: sub-agent, detached-shell
+    const allowedTypes = new Set(['user-prompt', 'main-agent', 'tool-call', 'result']);
+    filteredNodes = filteredNodes.filter(n => allowedTypes.has(n.type));
+  }
+  
+  // Apply agent type filter (only to non-core nodes)
+  if (filter.agentTypes.length > 0) {
+    filteredNodes = filteredNodes.filter(n => {
+      if (CORE_NODE_TYPES.has(n.type)) return true; // Always keep core nodes
+      const agentType = n.agentType || extractAgentType(n);
+      return agentType && filter.agentTypes.includes(agentType);
+    });
+  }
+  
+  // Apply dispatch family filter (only to non-core nodes)
+  if (filter.dispatchFamilies.length > 0) {
+    filteredNodes = filteredNodes.filter(n => {
+      if (CORE_NODE_TYPES.has(n.type)) return true; // Always keep core nodes
+      const family = n.metadata?.dispatch?.family;
+      return family && filter.dispatchFamilies.includes(family);
+    });
+  }
+  
+  // Build a set of kept node IDs
+  const keptNodeIds = new Set(filteredNodes.map(n => n.id));
+  
+  // Filter edges to only include connections between kept nodes
+  const filteredEdges = edges.filter(e => keptNodeIds.has(e.from) && keptNodeIds.has(e.to));
+  
+  // Rebuild rounds with filtered nodes
+  const filteredRounds = rounds
+    .map(round => ({
+      ...round,
+      responseNodes: round.responseNodes.filter(n => keptNodeIds.has(n.id)),
+    }))
+    .filter(round => keptNodeIds.has(round.mainAgentNode.id));
+  
+  return { rounds: filteredRounds, nodes: filteredNodes, edges: filteredEdges };
+}
+
+// Calculate node positions for multi-turn vertical layout
+function calculateMultiTurnPositions(
+  rounds: WorkflowRound[],
+  nodes: WorkflowNode[],
+  nodeWidth: number = 260,
+  nodeHeight: number = 110,
+): Map<string, NodePosition> {
   const positions = new Map<string, NodePosition>();
-  const nodeWidth = 200;
-  const nodeHeight = 80;
-  const collapsedGroupHeight = 60;
-  const horizontalGap = 60;
-  const verticalGap = 40;
+  const horizontalGap = 100;
+  const verticalGap = 30;
+  const mainAgentOffset = 80; // Distance from center to main agent
+  const responseStartOffset = 40; // Distance from center to first response
+  const startX = 50;
+  const centerY = 300;
 
-  // Build visible node list considering collapsed groups
-  const visibleNodes: WorkflowNode[] = [];
-  const hiddenNodeIds = new Set<string>();
-  const nodeIdToGroup = new Map<string, NodeGroup>();
-
-  for (const group of groups) {
-    if (!expandedGroups.has(group.id)) {
-      // Group is collapsed - hide its nodes
-      group.nodeIds.forEach(id => hiddenNodeIds.add(id));
-    }
-    group.nodeIds.forEach(id => nodeIdToGroup.set(id, group));
-  }
-
-  for (const node of nodes) {
-    if (!hiddenNodeIds.has(node.id)) {
-      visibleNodes.push(node);
-    }
-  }
-
-  // Group visible nodes by type for layering
-  const userNode = visibleNodes.find((n) => n.type === 'user-prompt');
-  const toolNodes = visibleNodes.filter((n) => n.type === 'tool-call' || n.type === 'sub-agent');
-  const resultNode = visibleNodes.find((n) => n.type === 'result');
-
-  // Track which nodes are in collapsed groups
-  const collapsedGroupNodes = new Map<string, NodeGroup>();
-  for (const group of groups) {
-    if (!expandedGroups.has(group.id)) {
-      // Add a virtual node for the collapsed group
-      const firstNodeId = group.nodeIds[0];
-      const firstNode = nodes.find(n => n.id === firstNodeId);
-      if (firstNode) {
-        collapsedGroupNodes.set(group.id, group);
-      }
-    }
-  }
-
-  let currentX = 50;
-  const centerY = 250;
-
-  // Position user node
+  // Position user prompt at Column 0, centered
+  const userNode = nodes.find(n => n.type === 'user-prompt');
   if (userNode) {
     positions.set(userNode.id, {
-      x: currentX,
+      x: startX,
       y: centerY - nodeHeight / 2,
       width: nodeWidth,
       height: nodeHeight,
     });
-    currentX += nodeWidth + horizontalGap;
   }
 
-  // Position tool/agent nodes, grouping collapsed ones
-  let lastGroupId: string | null = null;
-  let currentY = centerY - (toolNodes.length * (nodeHeight + verticalGap)) / 2;
-
-  for (let i = 0; i < toolNodes.length; i++) {
-    const node = toolNodes[i];
-    const group = nodeIdToGroup.get(node.id);
-
-    if (group && !expandedGroups.has(group.id)) {
-      // This node is part of a collapsed group
-      if (lastGroupId !== group.id) {
-        // First node of collapsed group - show group badge
-        positions.set(node.id, {
-          x: currentX,
-          y: centerY - collapsedGroupHeight / 2,
-          width: nodeWidth,
-          height: collapsedGroupHeight,
-        });
-        lastGroupId = group.id;
-      } else {
-        // Subsequent nodes in collapsed group - hide (position off-screen)
-        positions.set(node.id, {
-          x: -1000,
-          y: -1000,
-          width: 0,
-          height: 0,
-        });
-      }
-    } else {
-      lastGroupId = null;
-      const stackOffset = toolNodes.length > 1 
-        ? (i - (toolNodes.length - 1) / 2) * (nodeHeight + verticalGap)
-        : 0;
-      
+  // Position each round
+  rounds.forEach((round, roundIndex) => {
+    const columnX = startX + (roundIndex + 1) * (nodeWidth + horizontalGap);
+    
+    // Main Agent: Top position
+    const mainAgentY = centerY - mainAgentOffset - nodeHeight / 2;
+    positions.set(round.mainAgentNode.id, {
+      x: columnX,
+      y: mainAgentY,
+      width: nodeWidth,
+      height: nodeHeight,
+    });
+    
+    // Response nodes: Bottom positions, stacked vertically
+    round.responseNodes.forEach((node, i) => {
+      const y = centerY + responseStartOffset + i * (nodeHeight + verticalGap);
       positions.set(node.id, {
-        x: currentX,
-        y: centerY - nodeHeight / 2 + stackOffset,
+        x: columnX,
+        y,
         width: nodeWidth,
         height: nodeHeight,
       });
-    }
-  }
+    });
+  });
 
-  if (toolNodes.length > 0) {
-    currentX += nodeWidth + horizontalGap;
-  }
-
-  // Position result node
-  if (resultNode) {
+  // Position result at last column, centered
+  const resultNode = nodes.find(n => n.type === 'result');
+  if (resultNode && rounds.length > 0) {
+    const lastColumnX = startX + (rounds.length + 1) * (nodeWidth + horizontalGap);
     positions.set(resultNode.id, {
-      x: currentX,
+      x: lastColumnX,
       y: centerY - nodeHeight / 2,
       width: nodeWidth,
       height: nodeHeight,
@@ -329,77 +657,149 @@ function calculateNodePositions(nodes: WorkflowNode[], groups: NodeGroup[], expa
   return positions;
 }
 
-// Calculate proper arrow endpoint on node edge
-function calculateArrowEndpoint(
-  x1: number, y1: number, x2: number, y2: number, 
-  targetWidth: number, targetHeight: number
-): { x: number; y: number; angle: number } {
-  // Calculate angle from source to target
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const angle = Math.atan2(dy, dx);
-
-  // Target center
-  const targetCx = x2 + targetWidth / 2;
-  const targetCy = y2 + targetHeight / 2;
-
-  // Find intersection with target rectangle
-  // We need to find where the line from (x1, y1) to (targetCx, targetCy) 
-  // intersects the rectangle [x2, x2+width] x [y2, y2+height]
-
-  const halfWidth = targetWidth / 2;
-  const halfHeight = targetHeight / 2;
-
-  // Calculate intersection with each edge
-  let intersectX = x2;
-  let intersectY = targetCy;
-
-  if (Math.abs(dx) > 0.001) {
-    // Check left edge intersection
-    const tLeft = (x2 - x1) / dx;
-    const yLeft = y1 + tLeft * dy;
-    if (tLeft > 0 && yLeft >= y2 && yLeft <= y2 + targetHeight) {
-      intersectX = x2;
-      intersectY = yLeft;
+// Generate a curved bezier path for edges
+function generateEdgePath(
+  fromPos: NodePosition,
+  toPos: NodePosition,
+  arrowSize: number = 10
+): { path: string; arrowPoints: string } | null {
+  // Determine connection points based on relative positions
+  const fromCx = fromPos.x + fromPos.width / 2;
+  const fromCy = fromPos.y + fromPos.height / 2;
+  const toCx = toPos.x + toPos.width / 2;
+  const toCy = toPos.y + toPos.height / 2;
+  
+  // Calculate direction
+  const dx = toCx - fromCx;
+  const dy = toCy - fromCy;
+  
+  let x1: number, y1: number, x2: number, y2: number;
+  
+  // If target is to the right
+  if (dx > 0) {
+    x1 = fromPos.x + fromPos.width; // Right edge of source
+    y1 = fromCy;
+    x2 = toPos.x; // Left edge of target
+    y2 = toCy;
+  } else if (dx < 0) {
+    // Target is to the left (shouldn't happen much)
+    x1 = fromPos.x;
+    y1 = fromCy;
+    x2 = toPos.x + toPos.width;
+    y2 = toCy;
+  } else {
+    // Same column - vertical connection
+    if (dy > 0) {
+      // Target is below
+      x1 = fromCx;
+      y1 = fromPos.y + fromPos.height;
+      x2 = toCx;
+      y2 = toPos.y;
+    } else {
+      // Target is above
+      x1 = fromCx;
+      y1 = fromPos.y;
+      x2 = toCx;
+      y2 = toPos.y + toPos.height;
     }
   }
 
-  return { x: intersectX, y: intersectY, angle };
+  // Calculate control points for bezier
+  const controlOffset = Math.abs(dx) * 0.4;
+  const cp1x = x1 + Math.sign(dx) * Math.max(controlOffset, 50);
+  const cp1y = y1;
+  const cp2x = x2 - Math.sign(dx) * Math.max(controlOffset, 50);
+  const cp2y = y2;
+
+  // Build the path
+  const path = `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+
+  // Calculate angle for arrowhead
+  const angle = Math.atan2(dy, dx);
+  const arrowAngle = Math.PI / 6;
+  const ax1 = x2 - arrowSize * Math.cos(angle - arrowAngle);
+  const ay1 = y2 - arrowSize * Math.sin(angle - arrowAngle);
+  const ax2 = x2 - arrowSize * Math.cos(angle + arrowAngle);
+  const ay2 = y2 - arrowSize * Math.sin(angle + arrowAngle);
+
+  const arrowPoints = `${x2},${y2} ${ax1},${ay1} ${ax2},${ay2}`;
+
+  return { path, arrowPoints };
 }
 
-// Node component for rendering a single node
+// Node component for rendering a single node with agent type
 function WorkflowNodeCard({
   node,
   position,
   isSelected,
   onClick,
-  group,
-  isGroupExpanded,
-  onToggleGroup,
 }: {
   node: WorkflowNode;
   position: NodePosition;
   isSelected: boolean;
   onClick: () => void;
-  group?: NodeGroup;
-  isGroupExpanded?: boolean;
-  onToggleGroup?: () => void;
 }) {
-  const getNodeColor = () => {
-    if (isCollapsedGroup) {
-      return 'border-dashed border-gh-accent/60 bg-gh-accent/5';
-    }
+  const getNodeColors = () => {
     switch (node.type) {
       case 'user-prompt':
-        return 'border-gh-accent/50 bg-gh-accent/10';
+        return {
+          border: 'border-gh-accent/60',
+          bg: 'bg-gh-accent/10',
+          badge: 'bg-gh-accent/30 text-gh-accent',
+        };
+      case 'main-agent':
+        return {
+          border: 'border-purple-500/60',
+          bg: 'bg-purple-500/10',
+          badge: 'bg-purple-500/30 text-purple-400',
+        };
       case 'sub-agent':
-        return 'border-sky-400/50 bg-sky-400/10';
+        // AMTP v2: True background sub-agents use distinct styling
+        if (node.metadata?.backgroundInfo?.detached) {
+          return {
+            border: 'border-sky-500/60',
+            bg: 'bg-sky-500/15',
+            badge: 'bg-sky-500/40 text-sky-300',
+          };
+        }
+        return {
+          border: 'border-sky-400/60',
+          bg: 'bg-sky-400/10',
+          badge: 'bg-sky-400/30 text-sky-400',
+        };
       case 'tool-call':
-        return 'border-gh-muted/50 bg-gh-surface/50';
+        // AMTP v2: Agent-management tool-calls show agent badge styling
+        if (node.metadata?.dispatch?.family === 'agent-management') {
+          return {
+            border: 'border-indigo-400/60',
+            bg: 'bg-indigo-400/10',
+            badge: 'bg-indigo-400/30 text-indigo-400',
+          };
+        }
+        return {
+          border: 'border-gh-muted/50',
+          bg: 'bg-gh-surface/50',
+          badge: 'bg-gh-muted/30 text-gh-muted',
+        };
+      case 'detached-shell':
+        // AMTP v2: New node type for detached shell execution
+        return {
+          border: 'border-amber-500/60',
+          bg: 'bg-amber-500/10',
+          badge: 'bg-amber-500/30 text-amber-400',
+        };
       case 'result':
-        return 'border-gh-active/50 bg-gh-active/10';
+        return {
+          border: 'border-gh-active/60',
+          bg: 'bg-gh-active/10',
+          badge: 'bg-gh-active/30 text-gh-active',
+        };
       default:
-        return 'border-gh-border bg-gh-surface/30';
+        return {
+          border: 'border-gh-border',
+          bg: 'bg-gh-surface/30',
+          badge: 'bg-gh-muted/30 text-gh-muted',
+        };
     }
   };
 
@@ -411,55 +811,97 @@ function WorkflowNodeCard({
       completed: 'bg-gh-active',
       error: 'bg-gh-attention',
     };
-    return <span className={`w-2 h-2 rounded-full ${colors[node.status]}`} />;
+    return <span className={`w-1.5 h-1.5 rounded-full ${colors[node.status]}`} />;
   };
 
-  const isCollapsedGroup = group && !isGroupExpanded && group.nodeIds[0] === node.id;
+  const colors = getNodeColors();
+  const displayAgentType = node.agentType || extractAgentType(node);
+  
+  // Determine if this is a main agent (orchestrator) vs sub-agent
+  const isOrchestrator = node.type === 'main-agent' || node.isMainAgent;
+  
+  // Model badge display - show if inferred
+  const modelSource = node.metadata?.model?.source;
+  const displayModel = node.model;
+  
+  // AMTP v2: Determine display label based on node type
+  const getDisplayLabel = () => {
+    if (node.type === 'tool-call' && node.metadata?.dispatch?.family === 'agent-management') {
+      // For agent-management tool-calls, show the agent name prominently
+      return node.agentName || node.label;
+    }
+    if (node.type === 'detached-shell') {
+      return 'Detached Shell';
+    }
+    if (node.type === 'sub-agent' && node.metadata?.backgroundInfo?.detached) {
+      return node.label || 'Background Task';
+    }
+    return node.label;
+  };
+  
+  // AMTP v2: Get badge text based on node type
+  const getBadgeText = () => {
+    // Tool-call nodes (including agent-management) show 'tool call' badge
+    if (node.type === 'tool-call') {
+      return 'tool call';
+    }
+    if (node.type === 'detached-shell') {
+      return 'detached shell';
+    }
+    if (node.type === 'sub-agent' && node.metadata?.backgroundInfo?.detached) {
+      return 'background task';
+    }
+    return node.type === 'main-agent' ? 'orchestrator' : node.type.replace('-', ' ');
+  };
 
   return (
     <div
       onClick={onClick}
-      className={`absolute cursor-pointer rounded-xl border p-3 transition-all duration-200 hover:shadow-lg ${
+      className={`absolute cursor-pointer rounded-xl border-2 p-3 transition-all duration-200 hover:shadow-lg hover:scale-[1.02] ${
         isSelected ? 'ring-2 ring-gh-accent shadow-lg' : ''
-      } ${getNodeColor()}`}
+      } ${colors.border} ${colors.bg}`}
       style={{
         left: position.x,
         top: position.y,
         width: position.width,
-        height: isCollapsedGroup ? 60 : position.height,
+        height: position.height,
       }}
     >
-      <div className="flex items-start gap-2 h-full overflow-hidden">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 mb-1">
-            {isCollapsedGroup ? (
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="text-gh-accent">
-                <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
-                <path d="M4 6a2 2 0 1 1 4 0 2 2 0 0 1-4 0zm6 0a2 2 0 1 1 4 0 2 2 0 0 1-4 0zm-3 5.5a2 2 0 1 1 4 0 2 2 0 0 1-4 0z"/>
-              </svg>
-            ) : getStatusDot()}
-            <span className={`text-[10px] uppercase tracking-wide ${isCollapsedGroup ? 'text-gh-accent font-medium' : 'text-gh-muted/70'}`}>
-              {isCollapsedGroup ? `Group: ${group.collapsedCount} ${group.type === 'tool-group' ? 'tools' : 'agents'}` : node.type.replace('-', ' ')}
-            </span>
-          </div>
-          <p className="text-xs font-medium text-gh-text truncate" title={isCollapsedGroup ? `${group.label} group with ${group.collapsedCount} items` : node.label}>
-            {isCollapsedGroup ? `${node.label} +${group.collapsedCount - 1}` : node.label}
-          </p>
-          {!isCollapsedGroup && node.description && (
-            <p className="text-[10px] text-gh-muted/80 line-clamp-2 mt-0.5">{node.description}</p>
-          )}
+      <div className="flex flex-col h-full overflow-hidden">
+        {/* Header with type badge and status */}
+        <div className="flex items-center justify-between gap-1 mb-1">
+          <span className={`text-[9px] uppercase tracking-wide font-medium px-1.5 py-0.5 rounded ${colors.badge}`}>
+            {getBadgeText()}
+          </span>
+          {getStatusDot()}
         </div>
-        {isCollapsedGroup && onToggleGroup && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleGroup();
-            }}
-            className="shrink-0 rounded-md border border-gh-accent/50 bg-gh-accent/20 px-2 py-1 text-xs font-medium text-gh-accent hover:bg-gh-accent/30 transition-colors"
-            title="Click to expand group"
-          >
-            +{group.collapsedCount - 1} more
-          </button>
+        
+        {/* Title */}
+        <p className="text-xs font-semibold text-gh-text truncate" title={getDisplayLabel()}>
+          {getDisplayLabel()}
+        </p>
+        
+        {/* Agent Type - displayed prominently below the label (only for true agents) */}
+        {displayAgentType && node.type !== 'tool-call' && (
+          <span className={`inline-flex items-center text-[9px] mt-1 ${isOrchestrator ? 'text-purple-400 font-medium' : 'text-sky-400'}`}>
+            {isOrchestrator ? '● ' : '○ '}
+            {displayAgentType}
+          </span>
+        )}
+        
+        {/* Model badge when available */}
+        {displayModel && (
+          <span className={`inline-flex items-center text-[8px] mt-0.5 ${modelSource === 'inferred' ? 'text-gh-muted/60 italic' : 'text-gh-muted'}`}>
+            {modelSource === 'inferred' && '~ '}
+            {displayModel}
+          </span>
+        )}
+        
+        {/* Description - shown for all node types */}
+        {node.description && (
+          <p className="text-[9px] text-gh-muted/70 line-clamp-2 mt-1 leading-tight">
+            {node.description}
+          </p>
         )}
       </div>
     </div>
@@ -468,38 +910,34 @@ function WorkflowNodeCard({
 
 // Canvas container for the diagram
 function WorkflowCanvas({
-  graph,
-  groups,
-  expandedGroups,
+  rounds,
+  nodes,
+  edges,
   selectedNodeId,
   onNodeSelect,
-  onToggleGroup,
 }: {
-  graph: WorkflowGraph;
-  groups: NodeGroup[];
-  expandedGroups: Set<string>;
+  rounds: WorkflowRound[];
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
   selectedNodeId: string | null;
   onNodeSelect: (id: string | null) => void;
-  onToggleGroup: (groupId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, zoom: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const positions = useMemo(() => calculateNodePositions(graph.nodes, groups, expandedGroups), [graph.nodes, groups, expandedGroups]);
+  const positions = useMemo(() => calculateMultiTurnPositions(rounds, nodes), [rounds, nodes]);
 
   // Calculate canvas bounds
   const canvasBounds = useMemo(() => {
-    if (positions.size === 0) return { width: 800, height: 500 };
+    if (positions.size === 0) return { width: 800, height: 600 };
     let maxX = 0;
     let maxY = 0;
     for (const pos of positions.values()) {
-      if (pos.x >= 0) {
-        maxX = Math.max(maxX, pos.x + pos.width);
-        maxY = Math.max(maxY, pos.y + pos.height);
-      }
+      maxX = Math.max(maxX, pos.x + pos.width);
+      maxY = Math.max(maxY, pos.y + pos.height);
     }
-    return { width: Math.max(maxX + 100, 800), height: Math.max(maxY + 100, 500) };
+    return { width: Math.max(maxX + 100, 800), height: Math.max(maxY + 100, 600) };
   }, [positions]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -545,95 +983,23 @@ function WorkflowCanvas({
     }
   }, [canvasBounds.width]);
 
-  // Build map of node IDs to groups
-  const nodeIdToGroup = useMemo(() => {
-    const map = new Map<string, NodeGroup>();
-    for (const group of groups) {
-      for (const nodeId of group.nodeIds) {
-        map.set(nodeId, group);
-      }
-    }
-    return map;
-  }, [groups]);
-
-  // Build a map of hidden nodes to their group's representative node
-  const hiddenNodeToRepresentative = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const group of groups) {
-      if (!expandedGroups.has(group.id)) {
-        // Group is collapsed - map all nodes (except first) to the first node
-        const representativeId = group.nodeIds[0];
-        for (let i = 1; i < group.nodeIds.length; i++) {
-          map.set(group.nodeIds[i], representativeId);
-        }
-      }
-    }
-    return map;
-  }, [groups, expandedGroups]);
-
-  // Calculate edges with proper arrowheads
+  // Calculate edges with curved bezier paths
   const edgeElements = useMemo(() => {
-    return graph.edges.map((edge) => {
-      // Remap source/target if they're hidden in collapsed groups
-      let fromId = edge.from;
-      let toId = edge.to;
-      
-      // If source is hidden, use its group representative
-      if (hiddenNodeToRepresentative.has(fromId)) {
-        fromId = hiddenNodeToRepresentative.get(fromId)!;
-      }
-      // If target is hidden, use its group representative  
-      if (hiddenNodeToRepresentative.has(toId)) {
-        toId = hiddenNodeToRepresentative.get(toId)!;
-      }
-      
-      // Skip self-loops (edges that collapse to same node)
-      if (fromId === toId) return null;
-
-      const fromPos = positions.get(fromId);
-      const toPos = positions.get(toId);
+    return edges.map((edge) => {
+      const fromPos = positions.get(edge.from);
+      const toPos = positions.get(edge.to);
       if (!fromPos || !toPos) return null;
 
-      // Skip if positions are invalid
-      if (toPos.x < 0 || fromPos.x < 0) return null;
-
-      // Check if target is a collapsed group representative
-      const toGroup = nodeIdToGroup.get(toId);
-      const isToCollapsed = toGroup && !expandedGroups.has(toGroup.id);
-      
-      // Use collapsed height if target is collapsed
-      const targetHeight = isToCollapsed ? 60 : toPos.height;
-
-      // Source: right edge center
-      const x1 = fromPos.x + fromPos.width;
-      const y1 = fromPos.y + fromPos.height / 2;
-
-      // Calculate proper arrow endpoint
-      const endpoint = calculateArrowEndpoint(x1, y1, toPos.x, toPos.y, toPos.width, targetHeight);
-      
-      // Shorten the line slightly to not overlap with arrowhead
-      const arrowSize = 10;
-      const lineEndX = endpoint.x - Math.cos(endpoint.angle) * arrowSize;
-      const lineEndY = endpoint.y - Math.sin(endpoint.angle) * arrowSize;
-
-      // Calculate arrowhead points
-      const angle = endpoint.angle;
-      const arrowAngle = Math.PI / 6; // 30 degrees
-      const ax1 = endpoint.x - arrowSize * Math.cos(angle - arrowAngle);
-      const ay1 = endpoint.y - arrowSize * Math.sin(angle - arrowAngle);
-      const ax2 = endpoint.x - arrowSize * Math.cos(angle + arrowAngle);
-      const ay2 = endpoint.y - arrowSize * Math.sin(angle + arrowAngle);
+      const result = generateEdgePath(fromPos, toPos);
+      if (!result) return null;
 
       return {
         id: edge.id,
-        x1,
-        y1,
-        x2: lineEndX,
-        y2: lineEndY,
-        arrowPoints: `${endpoint.x},${endpoint.y} ${ax1},${ay1} ${ax2},${ay2}`,
+        path: result.path,
+        arrowPoints: result.arrowPoints,
       };
     }).filter(Boolean);
-  }, [graph.edges, positions, nodeIdToGroup, expandedGroups]);
+  }, [edges, positions]);
 
   return (
     <div
@@ -666,11 +1032,9 @@ function WorkflowCanvas({
         >
           {edgeElements.map((edge) => edge && (
             <g key={edge.id}>
-              <line
-                x1={edge.x1}
-                y1={edge.y1}
-                x2={edge.x2}
-                y2={edge.y2}
+              <path
+                d={edge.path}
+                fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 className="text-gh-border"
@@ -685,16 +1049,9 @@ function WorkflowCanvas({
         </svg>
 
         {/* Nodes layer */}
-        {graph.nodes.map((node) => {
+        {nodes.map((node) => {
           const pos = positions.get(node.id);
-          if (!pos || pos.x < 0) return null; // Skip hidden nodes
-          
-          const group = nodeIdToGroup.get(node.id);
-          const isGroupCollapsed = group && !expandedGroups.has(group.id);
-          const isFirstInCollapsedGroup = isGroupCollapsed && group.nodeIds[0] === node.id;
-          
-          // Only render first node of collapsed group, or all expanded nodes
-          if (isGroupCollapsed && !isFirstInCollapsedGroup) return null;
+          if (!pos) return null;
 
           return (
             <WorkflowNodeCard
@@ -703,9 +1060,6 @@ function WorkflowCanvas({
               position={pos}
               isSelected={selectedNodeId === node.id}
               onClick={() => onNodeSelect(selectedNodeId === node.id ? null : node.id)}
-              group={group}
-              isGroupExpanded={group ? expandedGroups.has(group.id) : undefined}
-              onToggleGroup={group ? () => onToggleGroup(group.id) : undefined}
             />
           );
         })}
@@ -725,50 +1079,57 @@ function WorkflowCanvas({
         </button>
       </div>
 
-      {/* Legend */}
+      {/* Legend - AMTP v2: Updated with refined taxonomy */}
       <div className="absolute top-4 left-4 rounded-lg border border-gh-border bg-gh-surface/90 px-3 py-2 space-y-1.5">
         <p className="text-[10px] uppercase tracking-wide text-gh-muted mb-2">Legend</p>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded border border-gh-accent/50 bg-gh-accent/10" />
+          <span className="w-3 h-3 rounded border-2 border-gh-accent/60 bg-gh-accent/10" />
           <span className="text-xs text-gh-muted">User Prompt</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded border border-sky-400/50 bg-sky-400/10" />
-          <span className="text-xs text-gh-muted">Sub-Agent</span>
+          <span className="w-3 h-3 rounded border-2 border-purple-500/60 bg-purple-500/10" />
+          <span className="text-xs text-gh-muted">Main Agent (orchestrator)</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded border border-gh-muted/50 bg-gh-surface/50" />
+          <span className="w-3 h-3 rounded border-2 border-indigo-400/60 bg-indigo-400/10" />
+          <span className="text-xs text-gh-muted">Sub-agent (dispatch)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded border-2 border-sky-400/60 bg-sky-400/10" />
+          <span className="text-xs text-gh-muted">Background Task</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded border-2 border-amber-500/60 bg-amber-500/10" />
+          <span className="text-xs text-gh-muted">Detached Shell</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded border-2 border-gh-muted/50 bg-gh-surface/50" />
           <span className="text-xs text-gh-muted">Tool Call</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded border border-gh-active/50 bg-gh-active/10" />
+          <span className="w-3 h-3 rounded border-2 border-gh-active/60 bg-gh-active/10" />
           <span className="text-xs text-gh-muted">Result</span>
         </div>
       </div>
-
-      {/* Group expansion hint */}
-      {groups.some(g => !expandedGroups.has(g.id)) && (
-        <div className="absolute bottom-4 left-4 rounded-lg border border-gh-border bg-gh-surface/90 px-3 py-2 text-xs text-gh-muted">
-          <span className="flex items-center gap-1.5">
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-              <path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
-              <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
-            </svg>
-            Click collapsed groups to expand
-          </span>
-        </div>
-      )}
     </div>
   );
 }
 
 // Node details panel
-function NodeDetailsPanel({ node, group, onClose, onToggleGroup }: { 
+function NodeDetailsPanel({ node, onClose }: { 
   node: WorkflowNode; 
-  group?: NodeGroup;
   onClose: () => void;
-  onToggleGroup?: () => void;
 }) {
+  const displayAgentType = node.agentType || extractAgentType(node);
+  const modelSource = node.metadata?.model?.source;
+  
+  // Show AGENT ID for agent-management tools and true agents
+  const shouldShowAgentId = node.type === 'sub-agent' || 
+    node.type === 'main-agent' ||
+    (node.type === 'tool-call' && 
+     (node.metadata?.dispatch?.toolName === 'read_agent' || 
+      node.metadata?.dispatch?.toolName === 'task'));
+  
   return (
     <div className="absolute top-4 right-4 w-72 rounded-xl border border-gh-border bg-gh-surface/95 shadow-lg">
       <div className="flex items-center justify-between border-b border-gh-border px-4 py-3">
@@ -788,16 +1149,66 @@ function NodeDetailsPanel({ node, group, onClose, onToggleGroup }: {
           <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Type</p>
           <p className="text-sm text-gh-text capitalize">{node.type.replace('-', ' ')}</p>
         </div>
+        
+        {/* Label - shown for all node types */}
         <div>
           <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Label</p>
           <p className="text-sm text-gh-text">{node.label}</p>
         </div>
+        
+        {/* Show AGENT ID for agent-management tools and true agents */}
+        {shouldShowAgentId && displayAgentType && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Agent ID</p>
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
+              node.type === 'main-agent' 
+                ? 'border-purple-500/30 bg-purple-500/10 text-purple-400'
+                : 'border-sky-400/30 bg-sky-400/10 text-sky-400'
+            }`}>
+              {displayAgentType}
+            </span>
+          </div>
+        )}
+        
+        {node.model && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Model</p>
+            <span className={`inline-flex items-center rounded-full border border-gh-border bg-gh-surface/50 px-2 py-0.5 text-xs ${modelSource === 'inferred' ? 'text-gh-muted/60 italic' : 'text-gh-muted'}`}>
+              {modelSource === 'inferred' && 'Inferred: '}
+              {node.model}
+            </span>
+          </div>
+        )}
+        
+        {node.metadata?.dispatch && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Dispatch</p>
+            <div className="text-xs text-gh-muted space-y-0.5">
+              <p><span className="text-gh-muted/70">Tool:</span> {node.metadata.dispatch.toolName}</p>
+              <p><span className="text-gh-muted/70">Family:</span> {node.metadata.dispatch.family}</p>
+            </div>
+          </div>
+        )}
+        
+        {node.metadata?.backgroundInfo && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Background Info</p>
+            <div className="text-xs text-gh-muted space-y-0.5">
+              <p><span className="text-gh-muted/70">Detached:</span> {node.metadata.backgroundInfo.detached ? 'Yes' : 'No'}</p>
+              {node.metadata.backgroundInfo.processId && (
+                <p><span className="text-gh-muted/70">Process ID:</span> {node.metadata.backgroundInfo.processId}</p>
+              )}
+            </div>
+          </div>
+        )}
+        
         {node.description && (
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Description</p>
             <p className="text-sm text-gh-text">{node.description}</p>
           </div>
         )}
+        
         {node.status && (
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Status</p>
@@ -817,6 +1228,7 @@ function NodeDetailsPanel({ node, group, onClose, onToggleGroup }: {
             </span>
           </div>
         )}
+        
         {node.timestamp && (
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gh-muted/70">Timestamp</p>
@@ -825,24 +1237,8 @@ function NodeDetailsPanel({ node, group, onClose, onToggleGroup }: {
             </p>
           </div>
         )}
-        {group && (
-          <div className="border-t border-gh-border pt-3 mt-3">
-            <p className="text-[10px] uppercase tracking-wide text-gh-muted/70 mb-2">Group</p>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-gh-text">{group.label}</span>
-              <span className="text-xs text-gh-muted">({group.collapsedCount} items)</span>
-            </div>
-            {onToggleGroup && (
-              <button
-                onClick={onToggleGroup}
-                className="mt-2 w-full rounded-md border border-gh-border bg-gh-bg px-3 py-1.5 text-xs text-gh-text hover:border-gh-accent transition-colors"
-              >
-                {group.isExpanded ? 'Collapse Group' : 'Expand Group'}
-              </button>
-            )}
-          </div>
-        )}
-        {node.metadata && Object.keys(node.metadata).length > 0 && !group && (
+        
+        {node.metadata && Object.keys(node.metadata).length > 0 && (
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gh-muted/70 mb-1">Metadata</p>
             <pre className="text-[10px] text-gh-muted bg-gh-bg/50 rounded p-2 overflow-auto max-h-32">
@@ -855,14 +1251,151 @@ function NodeDetailsPanel({ node, group, onClose, onToggleGroup }: {
   );
 }
 
+// Available agent types for filtering
+const AVAILABLE_AGENT_TYPES = ['coder', 'explorer', 'planner', 'reviewer', 'tester', 'writer', 'orchestrator'];
+
+// Available dispatch families for filtering - AMTP v2: includes 'execution' for detached-shell
+const AVAILABLE_DISPATCH_FAMILIES = ['agent-management', 'orchestration', 'execution', 'tool'];
+
+// Filter control component with new filter options
+function FilterControl({
+  filter,
+  onChange,
+  nodeCounts,
+}: {
+  filter: FilterState;
+  onChange: (filter: FilterState) => void;
+  nodeCounts: { all: number; agentsOnly: number; toolsOnly: number };
+}) {
+  const toggleAgentType = (agentType: string) => {
+    const newTypes = filter.agentTypes.includes(agentType)
+      ? filter.agentTypes.filter(t => t !== agentType)
+      : [...filter.agentTypes, agentType];
+    onChange({ ...filter, agentTypes: newTypes });
+  };
+
+  const toggleDispatchFamily = (family: string) => {
+    const newFamilies = filter.dispatchFamilies.includes(family)
+      ? filter.dispatchFamilies.filter(f => f !== family)
+      : [...filter.dispatchFamilies, family];
+    onChange({ ...filter, dispatchFamilies: newFamilies });
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {/* Node type filter */}
+      <div className="flex items-center gap-1 rounded-lg border border-gh-border bg-gh-bg p-0.5">
+        <button
+          onClick={() => onChange({ ...filter, nodeType: 'all' })}
+          className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+            filter.nodeType === 'all'
+              ? 'bg-gh-accent text-white'
+              : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'
+          }`}
+          title="All nodes"
+        >
+          All ({nodeCounts.all})
+        </button>
+        <button
+          onClick={() => onChange({ ...filter, nodeType: 'agents-only' })}
+          className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+            filter.nodeType === 'agents-only'
+              ? 'bg-gh-accent text-white'
+              : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'
+          }`}
+          title="Shows agents-only (hides tool-call)"
+        >
+          Agents ({nodeCounts.agentsOnly})
+        </button>
+        <button
+          onClick={() => onChange({ ...filter, nodeType: 'tools-only' })}
+          className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+            filter.nodeType === 'tools-only'
+              ? 'bg-gh-accent text-white'
+              : 'text-gh-muted hover:text-gh-text hover:bg-gh-surface/50'
+          }`}
+          title="Shows tools-only (hides sub-agent, detached-shell)"
+        >
+          Tools ({nodeCounts.toolsOnly})
+        </button>
+      </div>
+
+      {/* Agent type filter */}
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-gh-muted mr-1">Agent:</span>
+        {AVAILABLE_AGENT_TYPES.map(agentType => (
+          <button
+            key={agentType}
+            onClick={() => toggleAgentType(agentType)}
+            className={`px-2 py-0.5 text-[10px] rounded transition-colors border ${
+              filter.agentTypes.includes(agentType)
+                ? 'bg-sky-400/20 border-sky-400/50 text-sky-400'
+                : 'bg-gh-bg border-gh-border text-gh-muted hover:text-gh-text'
+            }`}
+            title={`Filter by ${agentType}`}
+          >
+            {agentType}
+          </button>
+        ))}
+        {filter.agentTypes.length > 0 && (
+          <button
+            onClick={() => onChange({ ...filter, agentTypes: [] })}
+            className="text-[10px] text-gh-muted hover:text-gh-attention ml-1"
+            title="Clear agent type filter"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Dispatch family filter */}
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-gh-muted mr-1">Family:</span>
+        {AVAILABLE_DISPATCH_FAMILIES.map(family => (
+          <button
+            key={family}
+            onClick={() => toggleDispatchFamily(family)}
+            className={`px-2 py-0.5 text-[10px] rounded transition-colors border ${
+              filter.dispatchFamilies.includes(family)
+                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                : 'bg-gh-bg border-gh-border text-gh-muted hover:text-gh-text'
+            }`}
+            title={`Filter by ${family}`}
+          >
+            {family}
+          </button>
+        ))}
+        {filter.dispatchFamilies.length > 0 && (
+          <button
+            onClick={() => onChange({ ...filter, dispatchFamilies: [] })}
+            className="text-[10px] text-gh-muted hover:text-gh-attention ml-1"
+            title="Clear family filter"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Main workflow topology view
-export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleFullScreen }: Props) {
+export function WorkflowTopologyView({ 
+  messages, 
+  activeSubAgents = [], // Destructure this
+  isFullScreen = false, 
+  onToggleFullScreen 
+}: Props) {
   const turnOptions = useMemo(() => buildTurnOptions(messages), [messages]);
   const [selectedTurnId, setSelectedTurnId] = useState<string>(() => 
     turnOptions[turnOptions.length - 1]?.turnId ?? ''
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<FilterState>({
+    nodeType: 'all',
+    agentTypes: [],
+    dispatchFamilies: [],
+  });
 
   // Update selected turn when turns change
   useEffect(() => {
@@ -876,49 +1409,86 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
     [turnOptions, selectedTurnId]
   );
 
-  const graph = useMemo(
-    () => currentTurn ? buildWorkflowGraph(currentTurn.messages) : { nodes: [], edges: [] },
+  // Build the raw graph from messages
+  const { rounds: rawRounds, nodes: rawNodes, edges: rawEdges } = useMemo(
+    () => currentTurn ? buildMultiTurnGraph(currentTurn.messages) : { rounds: [], nodes: [], edges: [] },
     [currentTurn]
   );
 
-  const groups = useMemo(
-    () => buildNodeGroups(graph.nodes),
-    [graph.nodes]
+  // Enrich dispatch tool-call nodes with server-side worker data from activeSubAgents.
+  // Dispatch nodes (task/read_agent) start as type 'tool-call'. When matching server
+  // data exists (model, lifecycle, status), the node is upgraded to type 'sub-agent'.
+  // This implements the RFC's dispatch-vs-worker separation while keeping one node per agent.
+  const { rounds: enrichedRounds, nodes: enrichedNodes, edges: enrichedEdges } = useMemo(() => {
+    // Index activeSubAgents by toolCallId for O(1) lookup
+    const agentByToolCallId = new Map(activeSubAgents.map(a => [a.toolCallId, a]));
+    
+    // Upgrade matching dispatch nodes in-place
+    const updatedNodes = rawNodes.map(node => {
+      if (!node.metadata?.toolCallId) return node;
+      const agent = agentByToolCallId.get(node.metadata.toolCallId);
+      if (!agent) return node;
+      
+      // Upgrade tool-call → sub-agent with server-side worker data
+      return {
+        ...node,
+        type: 'sub-agent' as const,
+        label: agent.agentDisplayName || agent.agentName || node.label,
+        agentType: agent.agent?.targetName || node.agentType,
+        agentName: agent.agentName || node.agentName,
+        model: agent.modelInfo?.name || agent.model || node.model,
+        description: agent.description || node.description,
+        metadata: {
+          ...node.metadata,
+          dispatch: agent.dispatch || node.metadata.dispatch,
+          agent: agent.agent || node.metadata.agent,
+          model: agent.modelInfo || node.metadata.model,
+          backgroundInfo: {
+            detached: !!node.metadata?.backgroundMode,
+          },
+        },
+        status: agent.isCompleted ? 'completed' : (node.status || 'running'),
+      } satisfies WorkflowNode;
+    });
+    
+    // Rebuild rounds with upgraded nodes so calculateMultiTurnPositions picks them up
+    const nodeById = new Map(updatedNodes.map(n => [n.id, n]));
+    const updatedRounds = rawRounds.map(round => ({
+      ...round,
+      mainAgentNode: nodeById.get(round.mainAgentNode.id) || round.mainAgentNode,
+      responseNodes: round.responseNodes.map(n => nodeById.get(n.id) || n),
+    }));
+    
+    return {
+      rounds: updatedRounds,
+      nodes: updatedNodes,
+      edges: [...rawEdges],
+    };
+  }, [rawNodes, rawEdges, rawRounds, activeSubAgents]);
+
+  // Apply node type filter only
+  const { rounds, nodes, edges } = useMemo(
+    () => applyNodeFilter(enrichedRounds, enrichedNodes, enrichedEdges, filter),
+    [enrichedRounds, enrichedNodes, enrichedEdges, filter]
   );
+
+  // Calculate node counts for filter display
+  const nodeCounts = useMemo(() => {
+    const allCount = enrichedNodes.length;
+    // AMTP v2: agentsOnly includes true background sub-agents and detached-shell (hides tool-call)
+    const agentsOnlyCount = enrichedNodes.filter(
+      n => n.type === 'user-prompt' || n.type === 'main-agent' || n.type === 'sub-agent' || n.type === 'detached-shell' || n.type === 'result'
+    ).length;
+    // toolsOnly hides sub-agent and detached-shell
+    const toolsOnlyCount = enrichedNodes.filter(
+      n => n.type === 'user-prompt' || n.type === 'main-agent' || n.type === 'tool-call' || n.type === 'result'
+    ).length;
+    return { all: allCount, agentsOnly: agentsOnlyCount, toolsOnly: toolsOnlyCount };
+  }, [enrichedNodes]);
 
   const selectedNode = useMemo(
-    () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
-    [graph.nodes, selectedNodeId]
-  );
-
-  const selectedGroup = useMemo(() => {
-    if (!selectedNode) return undefined;
-    return groups.find(g => g.nodeIds.includes(selectedNode.id));
-  }, [groups, selectedNode]);
-
-  const handleToggleGroup = useCallback((groupId: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleExpandAll = useCallback(() => {
-    setExpandedGroups(new Set(groups.map(g => g.id)));
-  }, [groups]);
-
-  const handleCollapseAll = useCallback(() => {
-    setExpandedGroups(new Set());
-  }, []);
-
-  const collapsedCount = useMemo(() => 
-    groups.filter(g => !expandedGroups.has(g.id)).length,
-    [groups, expandedGroups]
+    () => nodes.find((n) => n.id === selectedNodeId) ?? null,
+    [nodes, selectedNodeId]
   );
 
   if (turnOptions.length === 0) {
@@ -942,10 +1512,16 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gh-text">Workflow Topology</p>
             <p className="text-xs text-gh-muted mt-0.5">
-              Visualize how this turn was resolved from prompt to result
+              Multi-turn orchestration: User → Main Agent → Sub-Agents → Result
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <FilterControl
+              filter={filter}
+              onChange={setFilter}
+              nodeCounts={nodeCounts}
+            />
+            <div className="w-px h-5 bg-gh-border mx-1" />
             <label className="text-xs text-gh-muted">Turn:</label>
             <select
               value={selectedTurnId}
@@ -961,27 +1537,6 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
                 </option>
               ))}
             </select>
-            {groups.length > 0 && (
-              <div className="flex items-center gap-1 border-l border-gh-border pl-2 ml-1">
-                {collapsedCount > 0 ? (
-                  <button
-                    onClick={handleExpandAll}
-                    className="text-xs text-gh-accent hover:text-gh-text px-2 py-1 rounded hover:bg-gh-surface/50"
-                    title="Expand all groups"
-                  >
-                    Expand all ({collapsedCount})
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleCollapseAll}
-                    className="text-xs text-gh-accent hover:text-gh-text px-2 py-1 rounded hover:bg-gh-surface/50"
-                    title="Collapse all groups"
-                  >
-                    Collapse all
-                  </button>
-                )}
-              </div>
-            )}
             {onToggleFullScreen && (
               <button
                 type="button"
@@ -1007,19 +1562,22 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
         <div className="flex items-center gap-4 mt-3 text-xs text-gh-muted">
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-gh-muted" />
-            {graph.nodes.length} nodes
+            {nodes.length} nodes
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-gh-border" />
-            {graph.edges.length} edges
+            {edges.length} edges
           </span>
-          {groups.length > 0 && (
+          {rounds.length > 0 && (
             <span className="flex items-center gap-1.5">
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="text-gh-muted">
-                <path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
-                <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
-              </svg>
-              {groups.length} groups ({collapsedCount} collapsed)
+              <span className="w-2 h-2 rounded-full bg-purple-500/60" />
+              {rounds.length} round{rounds.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          {(filter.agentTypes.length > 0 || filter.dispatchFamilies.length > 0) && (
+            <span className="flex items-center gap-1 text-gh-accent">
+              <span className="w-2 h-2 rounded-full bg-gh-accent animate-pulse" />
+              Filtered
             </span>
           )}
           {currentTurn && (
@@ -1032,21 +1590,18 @@ export function WorkflowTopologyView({ messages, isFullScreen = false, onToggleF
 
       {/* Canvas area */}
       <WorkflowCanvas
-        graph={graph}
-        groups={groups}
-        expandedGroups={expandedGroups}
+        rounds={rounds}
+        nodes={nodes}
+        edges={edges}
         selectedNodeId={selectedNodeId}
         onNodeSelect={setSelectedNodeId}
-        onToggleGroup={handleToggleGroup}
       />
 
       {/* Node details panel */}
       {selectedNode && (
         <NodeDetailsPanel 
           node={selectedNode} 
-          group={selectedGroup}
           onClose={() => setSelectedNodeId(null)}
-          onToggleGroup={selectedGroup ? () => handleToggleGroup(selectedGroup.id) : undefined}
         />
       )}
     </div>
