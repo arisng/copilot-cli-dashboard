@@ -24,8 +24,19 @@ import type {
   SessionDbColumnInfo,
   SessionDbInspection,
   SessionDbTablePreview,
+  DispatchInfo,
+  AgentIdentity,
+  ModelInfo,
+  StatusInfo,
 } from './sessionTypes.js';
 import { needsAttention, lastSessionStatus, hasPendingWork, hasPendingPlanApproval, getCurrentMode } from './utils/needsAttention.js';
+import {
+  isCatalogAvailable,
+  querySessionsFromCatalog,
+  searchAcrossSessions,
+  type CatalogSession,
+  detectDiscrepancies,
+} from './utils/catalogSearch.js';
 
 const DEFAULT_SESSION_ROOT = path.join(os.homedir(), '.copilot', 'session-state');
 const ROOT_DISCOVERY_TTL_MS = 30_000;
@@ -261,7 +272,7 @@ function discoverSessionRoots(): string[] {
   return [...new Set(roots.map(normalizeRoot))].filter(isDirectory);
 }
 
-function getSessionRoots(): string[] {
+export function getSessionRoots(): string[] {
   const configuredRootsKey = process.env.COPILOT_SESSION_STATE ?? null;
   const now = Date.now();
 
@@ -278,7 +289,7 @@ function getSessionRoots(): string[] {
   return roots;
 }
 
-function findSessionDir(sessionId: string): string | null {
+export function findSessionDir(sessionId: string): string | null {
   for (const root of getSessionRoots()) {
     const sessionDir = path.join(root, sessionId);
     if (isDirectory(sessionDir)) {
@@ -443,15 +454,99 @@ function buildSubAgentMessages(events: RawEvent[], agents: ActiveSubAgent[], isO
   return result;
 }
 
+// ============================================================================
+// Normalized Sub-Agent Taxonomy Helpers (AMTP Plan - Animal Phase)
+// ============================================================================
+
+/**
+ * Classify a tool name into its dispatch family.
+ * - 'agent-management': Tools that dispatch/manage sub-agents (task, read_agent)
+ * - 'orchestration': Session-level orchestration (task_complete)
+ * - 'tool': Regular utility tools
+ */
+function classifyToolFamily(toolName: string): DispatchInfo['family'] {
+  if (toolName === 'task' || toolName === 'read_agent') return 'agent-management';
+  if (toolName === 'task_complete') return 'orchestration';
+  return 'tool';
+}
+
+/**
+ * Classify an agent target name into its kind and normalize the name.
+ * - built-in: Known built-in agents (explore, general-purpose, code-review, coder, writer)
+ * - custom: User-defined agent names
+ * - unknown: Fallback when name is empty/missing
+ */
+function classifyAgentTarget(agentName: string): { targetName: string; targetKind: AgentIdentity['targetKind'] } {
+  // Map known built-in agents
+  const builtIns = ['explore', 'general-purpose', 'code-review', 'coder', 'writer'];
+  if (builtIns.includes(agentName)) return { targetName: agentName, targetKind: 'built-in' };
+  if (agentName) return { targetName: agentName, targetKind: 'custom' };
+  return { targetName: 'unknown', targetKind: 'unknown' };
+}
+
+/**
+ * Infer model source based on model value and dispatch arguments.
+ * - 'dispatch-override': Model explicitly specified in dispatch args
+ * - 'inferred': Model inferred from session or other context
+ * - null: No model information available
+ */
+function inferModelSource(model: string | undefined, args: Record<string, unknown>): ModelInfo {
+  if (!model) return { name: null, source: null };
+  if (args?.model) return { name: model, source: 'dispatch-override' };
+  // Add more inference logic as needed
+  return { name: model, source: 'inferred' };
+}
+
+/**
+ * Build StatusInfo from completion state and event context.
+ * Distinguishes between session completion, dispatch completion, and worker completion.
+ */
+function buildStatusInfo(
+  isCompleted: boolean,
+  isIdle: boolean,
+  hasError: boolean,
+  sourceEvent: string,
+  family: DispatchInfo['family']
+): StatusInfo {
+  // task_complete is orchestration scope, not worker scope
+  const scope = family === 'orchestration' ? 'session' : family === 'agent-management' ? 'worker' : 'dispatch';
+  
+  let kind: StatusInfo['kind'];
+  if (hasError) {
+    kind = 'error';
+  } else if (isCompleted) {
+    kind = 'completed';
+  } else if (isIdle) {
+    kind = 'idle';
+  } else {
+    kind = 'running';
+  }
+  
+  return { scope, kind, sourceEvent };
+}
+
 function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
   // Accumulate all sub-agents across the entire session (never reset).
   // Each toolCallId is unique, so no duplicates.
-  const started = new Map<string, { agentName: string; agentDisplayName: string; sessionId?: string; lastActivityAt: string }>();
+  
+  // Core tracking maps keyed by toolCallId (authoritative correlation key)
+  const started = new Map<string, { 
+    agentName: string; 
+    agentDisplayName: string; 
+    sessionId?: string; 
+    lastActivityAt: string;
+    dispatchArgs?: Record<string, unknown>;
+    toolName: string;
+  }>();
   const completed = new Set<string>();
+  const errors = new Set<string>();
+  const idle = new Set<string>();
   const descriptions = new Map<string, string>();
+  const models = new Map<string, string>();
+  
   // track read_agent toolCallIds so we can detect their completion via tool.execution_complete
   const readAgentIds = new Set<string>();
-  // track task/task_complete toolCallIds so we can detect their completion via tool.execution_complete
+  // track task toolCallIds (NOT task_complete - that's orchestration, not agent dispatch)
   const taskToolIds = new Set<string>();
   // Map agentId (task name) to toolCallId for tracking agent_idle notifications
   const agentIdToToolCallId = new Map<string, string>();
@@ -463,7 +558,13 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
   // First pass: collect all subagent.started events
   for (const event of events) {
     if (event.type === 'subagent.started') {
-      const d = event.data as { toolCallId: string; agentName: string; agentDisplayName: string; sessionId?: string };
+      const d = event.data as { 
+        toolCallId: string; 
+        agentName: string; 
+        agentDisplayName: string; 
+        sessionId?: string;
+        model?: string;
+      };
       const agentType = d.agentName; // e.g., 'general-purpose', 'explore', 'coder'
       if (!subagentsByType.has(agentType)) {
         subagentsByType.set(agentType, []);
@@ -473,14 +574,34 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       // Check if we have an agentId mapping for this toolCallId (from task tool call)
       // If so, use agentId as the display name for proper consolidation
       let agentDisplayName = d.agentDisplayName;
+      let dispatchArgs: Record<string, unknown> | undefined;
+      let toolName = 'task'; // Default assumption
+      
       for (const [agentId, mappedToolCallId] of agentIdToToolCallId.entries()) {
         if (mappedToolCallId === d.toolCallId) {
           agentDisplayName = agentId;
+          // Try to recover args from the original tool request if available
+          const existing = started.get(d.toolCallId);
+          if (existing) {
+            dispatchArgs = existing.dispatchArgs;
+            toolName = existing.toolName;
+          }
           break;
         }
       }
       
-      started.set(d.toolCallId, { agentName: d.agentName, agentDisplayName, sessionId: d.sessionId, lastActivityAt: event.timestamp });
+      started.set(d.toolCallId, { 
+        agentName: d.agentName, 
+        agentDisplayName, 
+        sessionId: d.sessionId, 
+        lastActivityAt: event.timestamp,
+        dispatchArgs,
+        toolName,
+      });
+      
+      if (d.model) {
+        models.set(d.toolCallId, d.model);
+      }
     }
   }
 
@@ -491,26 +612,41 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
     if (event.type === 'assistant.message') {
       const data = event.data as unknown as AssistantMessageData;
       for (const tr of data.toolRequests ?? []) {
-        if (tr.name === 'task' || tr.name === 'task_complete') {
-          const args = tr.arguments as { name?: string; description?: string };
+        const family = classifyToolFamily(tr.name);
+        
+        // task_complete is orchestration - NOT a sub-agent identity
+        if (family === 'orchestration') {
+          // Skip - task_complete doesn't create a sub-agent entry
+          continue;
+        }
+        
+        // Only process agent-management dispatches
+        if (family === 'agent-management') {
+          const args = tr.arguments as { name?: string; description?: string; model?: string };
           if (args.description) descriptions.set(tr.toolCallId, args.description);
-          // Track task tools that spawn sub-agents for completion detection via tool.execution_complete
+          
           // The 'name' argument becomes the agentId in system.notification events
           if (args.name) {
             taskToolIds.add(tr.toolCallId);
             agentIdToToolCallId.set(args.name, tr.toolCallId);
+            
             // Only add to started if not already added from subagent.started
             if (!started.has(tr.toolCallId)) {
               started.set(tr.toolCallId, {
                 agentName: tr.name,
                 agentDisplayName: args.name,
                 lastActivityAt: event.timestamp,
+                dispatchArgs: tr.arguments,
+                toolName: tr.name,
               });
+              if (args.model) {
+                models.set(tr.toolCallId, args.model);
+              }
             }
           }
         }
       }
-    } else if (event.type === 'subagent.completed' || event.type === 'subagent.failed') {
+    } else if (event.type === 'subagent.completed') {
       const d = event.data as { toolCallId: string };
       completed.add(d.toolCallId);
       // Update lastActivityAt for completion event
@@ -518,9 +654,22 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       if (agent) {
         agent.lastActivityAt = event.timestamp;
       }
+    } else if (event.type === 'subagent.failed') {
+      const d = event.data as { toolCallId: string };
+      completed.add(d.toolCallId);
+      errors.add(d.toolCallId);
+      // Update lastActivityAt for failure event
+      const agent = started.get(d.toolCallId);
+      if (agent) {
+        agent.lastActivityAt = event.timestamp;
+      }
     } else if (event.type === 'system.notification') {
       // Task sub-agents emit system.notification with kind.type: 'agent_idle' when they finish
-      const d = event.data as { content?: string; kind?: { type?: string; agentId?: string; agentType?: string; description?: string }; timestamp?: string };
+      const d = event.data as { 
+        content?: string; 
+        kind?: { type?: string; agentId?: string; agentType?: string; description?: string }; 
+        timestamp?: string 
+      };
       if (d.kind?.type === 'agent_idle') {
         // Try to find the matching toolCallId
         let toolCallId: string | undefined;
@@ -550,12 +699,18 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
         
         // agent_idle means the agent is "idle (waiting for messages)" - it's NOT completed!
         // The agent is only truly completed when read_agent/write_agent is called and returns results.
-        // Don't add to completed here - just track that we received an idle notification.
-        if (!toolCallId && d.kind.agentType) {
+        // Mark as idle, not completed.
+        if (toolCallId) {
+          idle.add(toolCallId);
+          const agent = started.get(toolCallId);
+          if (agent) {
+            agent.lastActivityAt = event.timestamp;
+          }
+        } else if (d.kind.agentType) {
           // PRAGMATIC FALLBACK: If we couldn't match directly, queue for later matching
           // This happens when the original tool request was compacted away
           pendingIdleNotifications.push({
-            agentId: d.kind.agentId, // Store agentId for consolidation
+            agentId: d.kind.agentId,
             agentType: d.kind.agentType,
             description: d.kind.description,
             timestamp: (event as RawEvent).timestamp,
@@ -564,7 +719,12 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       }
     } else if (event.type === 'tool.execution_start') {
       // read_agent calls spawn async agents without subagent.started events
-      const d = event.data as { toolCallId: string; toolName: string; arguments: Record<string, unknown> };
+      const d = event.data as { 
+        toolCallId: string; 
+        toolName: string; 
+        arguments: Record<string, unknown>;
+        model?: string;
+      };
       if (d.toolName === 'read_agent') {
         const agentId = d.arguments?.agent_id as string | undefined;
         readAgentIds.add(d.toolCallId);
@@ -572,8 +732,13 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
           agentName: 'read_agent',
           agentDisplayName: agentId ?? 'Read Agent',
           lastActivityAt: event.timestamp,
+          dispatchArgs: d.arguments,
+          toolName: d.toolName,
         });
         if (agentId) descriptions.set(d.toolCallId, agentId);
+        if (d.model) {
+          models.set(d.toolCallId, d.model);
+        }
       }
     } else if (event.type === 'tool.execution_complete') {
       const d = event.data as { toolCallId: string };
@@ -589,9 +754,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
   }
 
   // PRAGMATIC MATCHING: For agent_idle notifications that couldn't be directly matched,
-  // we used to mark them as completed, but that's WRONG - agent_idle means "idle (waiting for messages)",
-  // NOT "completed". The agent is still running and can be read from or written to.
-  // Only create synthetic entries for agents whose subagent.started was compacted away.
+  // create synthetic entries for agents whose subagent.started was compacted away.
   for (const idleNotification of pendingIdleNotifications) {
     const candidates = subagentsByType.get(idleNotification.agentType) ?? [];
     // Check if we have any running candidates for this type
@@ -612,11 +775,13 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
         agentName: idleNotification.agentType,
         agentDisplayName,
         lastActivityAt: idleNotification.timestamp,
+        toolName: 'task',
       });
       if (idleNotification.description) {
         descriptions.set(syntheticToolCallId, idleNotification.description);
       }
-      // NOTE: Don't mark as completed! agent_idle != completed
+      // Mark as idle (not completed) - agent_idle != completed
+      idle.add(syntheticToolCallId);
     }
   }
 
@@ -634,24 +799,65 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
     }
   }
 
-  // Build initial result
-  const agents = [...started.entries()].map(([toolCallId, { agentName, agentDisplayName, sessionId, lastActivityAt }]) => {
+  // Build initial result with normalized taxonomy
+  const agents: ActiveSubAgent[] = [...started.entries()].map(([toolCallId, { 
+    agentName, 
+    agentDisplayName, 
+    sessionId, 
+    lastActivityAt,
+    dispatchArgs,
+    toolName,
+  }]) => {
     const agentId = toolCallIdToAgentId.get(toolCallId) ?? agentDisplayName;
+    const isCompleted = completed.has(toolCallId);
+    const hasError = errors.has(toolCallId);
+    const isIdleState = idle.has(toolCallId);
+    const model = models.get(toolCallId);
+    
+    // Build normalized taxonomy fields
+    const family = classifyToolFamily(toolName);
+    const { targetName, targetKind } = classifyAgentTarget(agentName === 'read_agent' ? 'read_agent' : agentName);
+    const modelInfo = inferModelSource(model, dispatchArgs ?? {});
+    
+    // Determine source event for status
+    let sourceEvent = 'subagent.started';
+    if (hasError) sourceEvent = 'subagent.failed';
+    else if (isCompleted) sourceEvent = completed.has(toolCallId) ? 'tool.execution_complete' : 'subagent.completed';
+    else if (isIdleState) sourceEvent = 'system.notification';
+    
+    const status = buildStatusInfo(isCompleted, isIdleState, hasError, sourceEvent, family);
+    
     return {
+      // Legacy fields (backward compat)
       toolCallId,
       agentId,
       agentName,
       agentDisplayName,
       description: descriptions.get(toolCallId),
-      isCompleted: completed.has(toolCallId),
+      isCompleted,
       sessionId,
       lastActivityAt,
+      model,
+      
+      // New normalized taxonomy fields
+      dispatch: {
+        toolName,
+        family,
+        toolCallId,
+      },
+      agent: {
+        targetName,
+        targetKind,
+        instanceId: agentId,
+      },
+      modelInfo,
+      status,
     };
   });
 
   // CONSOLIDATE by agentId: keep only one entry per agentId
   // This handles cases where the same agent is dispatched multiple times
-  const agentMap = new Map<string, typeof agents[0]>();
+  const agentMap = new Map<string, ActiveSubAgent>();
   for (const agent of agents) {
     const existing = agentMap.get(agent.agentId);
     if (!existing) {
@@ -1511,7 +1717,73 @@ export function parseSessionDir(sessionId: string): SessionDetail | null {
   return parseSessionDirAtPath(sessionDir, sessionId);
 }
 
-export function listAllSessions(): SessionSummary[] {
+/**
+ * Convert a CatalogSession to SessionSummary.
+ * For dynamic fields (needsAttention, isWorking, etc.), we rely on filesystem
+ * since the catalog may be stale. If sessionDir is not found, returns basic summary.
+ */
+function convertCatalogSessionToSummary(catalogSession: CatalogSession): SessionSummary {
+  const sessionDir = findSessionDir(catalogSession.id);
+  const isOpen = sessionDir ? hasLockFile(sessionDir) : false;
+
+  // If we have the session directory, get full summary from filesystem for accuracy
+  if (sessionDir) {
+    const fsSummary = parseSessionSummaryAtPath(sessionDir, catalogSession.id);
+    if (fsSummary) {
+      return fsSummary;
+    }
+  }
+
+  // Fallback: build summary from catalog data with defaults for dynamic fields
+  const now = new Date().toISOString();
+  return {
+    id: catalogSession.id,
+    title: catalogSession.summary || 'Untitled session',
+    summary: catalogSession.summary,
+    projectPath: catalogSession.cwd || 'Unknown',
+    gitBranch: catalogSession.branch,
+    startedAt: catalogSession.created_at || now,
+    lastActivityAt: catalogSession.updated_at || now,
+    durationMs: 0,
+    isOpen,
+    needsAttention: false,
+    isWorking: false,
+    isAborted: false,
+    isTaskComplete: false,
+    isIdle: !isOpen,
+    messageCount: 0,
+    totalApiDurationMs: null,
+    totalApiDurationEstimateMs: 0,
+    totalApiDurationSource: 'assistant_turn_estimate',
+    totalPremiumRequests: null,
+    totalPremiumRequestsEstimate: 0,
+    totalPremiumRequestsSource: 'assistant_turn_estimate',
+    currentMode: 'interactive',
+    activeSubAgents: [],
+    hasPlan: false,
+    isPlanPending: false,
+    previewMessages: [],
+  };
+}
+
+/**
+ * List all sessions from the central catalog database.
+ * Returns null if catalog is not available or feature flag is not enabled.
+ */
+export function listAllSessionsFromCatalog(): SessionSummary[] | null {
+  if (process.env.COPILOT_USE_CENTRAL_CATALOG !== 'true') return null;
+  if (!isCatalogAvailable()) return null;
+
+  const catalogSessions = querySessionsFromCatalog();
+  if (!catalogSessions) return null;
+
+  return catalogSessions.map(convertCatalogSessionToSummary);
+}
+
+/**
+ * List all sessions from filesystem (original implementation).
+ */
+function listAllSessionsFromFilesystem(): SessionSummary[] {
   const sessions: SessionSummary[] = [];
   const seenSessionIds = new Set<string>();
   const seenSessionDirs = new Set<string>();
@@ -1542,6 +1814,80 @@ export function listAllSessions(): SessionSummary[] {
   return sessions.sort(
     (a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt)
   );
+}
+
+/**
+ * List all sessions with catalog-first approach.
+ * If COPILOT_USE_CENTRAL_CATALOG is enabled and catalog is available, use it.
+ * Otherwise fall back to filesystem scanning.
+ * If COPILOT_CATALOG_VALIDATE is enabled, compare catalog with filesystem and log discrepancies.
+ */
+export function listAllSessions(): SessionSummary[] {
+  // Try catalog first if enabled
+  if (process.env.COPILOT_USE_CENTRAL_CATALOG === 'true') {
+    const catalogSessions = listAllSessionsFromCatalog();
+    if (catalogSessions) {
+      // Validate: if COPILOT_CATALOG_VALIDATE is true, compare with filesystem
+      if (process.env.COPILOT_CATALOG_VALIDATE === 'true') {
+        const filesystemSessions = listAllSessionsFromFilesystem();
+        const discrepancies = detectDiscrepancies(
+          catalogSessions.map((s) => ({ 
+            id: s.id, 
+            updated_at: s.lastActivityAt,
+            cwd: s.projectPath,
+            repository: null,
+            branch: s.gitBranch,
+            summary: s.summary,
+            created_at: s.startedAt,
+            host_type: null,
+          }) as CatalogSession),
+          filesystemSessions.map((s) => s.id)
+        );
+        if (discrepancies.length > 0) {
+          console.warn('[Catalog] Discrepancies detected between catalog and filesystem:', discrepancies);
+        }
+      }
+      return catalogSessions;
+    }
+  }
+
+  // Fall back to filesystem
+  return listAllSessionsFromFilesystem();
+}
+
+/**
+ * Convert catalog search results to the ResearchFileMatch format for API compatibility.
+ */
+function convertCatalogSearchResults(catalogResults: import('./utils/catalogSearch.js').SearchResult[]): import('./sessionTypes.js').SearchResult[] {
+  return catalogResults.map((result) => ({
+    sessionId: result.sessionId,
+    sessionName: 'Unknown', // Catalog search doesn't provide session name directly
+    filePath: `${result.sourceType}:${result.sourceId}`,
+    fileName: result.sourceType,
+    snippet: result.content.slice(0, 150),
+    lastModified: new Date().toISOString(),
+  }));
+}
+
+/**
+ * Search across sessions using the central catalog's FTS5 search_index.
+ * Falls back to filesystem-based research artifact search if catalog is not available.
+ */
+export async function searchSessions(query: string): Promise<import('./sessionTypes.js').SearchResult[]> {
+  // Try catalog search first if available
+  if (isCatalogAvailable()) {
+    try {
+      const catalogResults = searchAcrossSessions(query);
+      if (catalogResults.length > 0) {
+        return convertCatalogSearchResults(catalogResults);
+      }
+    } catch (error) {
+      console.warn('[Catalog] Search failed, falling back to filesystem:', error);
+    }
+  }
+
+  // Fall back to filesystem-based research artifact search
+  return searchResearchArtifacts(query);
 }
 
 interface ResearchFileMatch {
@@ -1683,6 +2029,257 @@ async function withConcurrencyLimit<T>(
   }
 
   return results;
+}
+
+// ============================================================================
+// Manual Control Helpers (AMTP Plan - Man Phase)
+// ============================================================================
+
+const PAUSE_MARKER_FILE = 'manual_pause.marker';
+
+/**
+ * Get all lock files for a session.
+ * Returns array of lock file names (e.g., ['inuse.12345.lock'])
+ */
+function getLockFiles(sessionDir: string): string[] {
+  try {
+    return fs
+      .readdirSync(sessionDir)
+      .filter((file) => file.startsWith('inuse.') && file.endsWith('.lock'))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check if a PID is still active.
+ * On Windows, uses tasklist; on Unix, uses kill -0.
+ */
+function isPidActive(pid: number): boolean {
+  try {
+    if (process.platform === 'win32') {
+      const result = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH'], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5000,
+      });
+      return result.stdout?.includes(String(pid)) ?? false;
+    } else {
+      // On Unix, kill -0 checks if process exists without sending a signal
+      process.kill(pid, 0);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extract PID from lock file name (inuse.<pid>.lock)
+ */
+function extractPidFromLockFile(fileName: string): number | null {
+  const match = fileName.match(/inuse\.(\d+)\.lock/);
+  if (match) {
+    const pid = parseInt(match[1], 10);
+    return Number.isNaN(pid) ? null : pid;
+  }
+  return null;
+}
+
+export interface CloseSessionResult {
+  success: boolean;
+  message: string;
+  closedLocks?: string[];
+  skippedActiveLocks?: string[];
+}
+
+/**
+ * Force-close a session by removing its lock files.
+ * Only removes locks for non-active PIDs to avoid killing running sessions.
+ */
+export function closeSession(sessionId: string): CloseSessionResult {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) {
+    return { success: false, message: 'Session not found' };
+  }
+
+  const lockFiles = getLockFiles(sessionDir);
+  if (lockFiles.length === 0) {
+    return { success: true, message: 'Session already closed (no lock files found)' };
+  }
+
+  const closedLocks: string[] = [];
+  const skippedActiveLocks: string[] = [];
+
+  for (const lockFile of lockFiles) {
+    const pid = extractPidFromLockFile(lockFile);
+    const lockPath = path.join(sessionDir, lockFile);
+
+    // If we can't extract PID or PID is not active, safe to remove
+    if (pid === null || !isPidActive(pid)) {
+      try {
+        fs.unlinkSync(lockPath);
+        closedLocks.push(lockFile);
+      } catch (error) {
+        return {
+          success: false,
+          message: `Failed to remove lock file ${lockFile}: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    } else {
+      skippedActiveLocks.push(lockFile);
+    }
+  }
+
+  if (skippedActiveLocks.length > 0 && closedLocks.length === 0) {
+    return {
+      success: false,
+      message: `Cannot close active session - process(es) still running: ${skippedActiveLocks.join(', ')}`,
+    };
+  }
+
+  if (skippedActiveLocks.length > 0) {
+    return {
+      success: true,
+      message: `Partially closed session - removed ${closedLocks.length} lock(s), but ${skippedActiveLocks.length} active process(es) remain`,
+      closedLocks,
+      skippedActiveLocks,
+    };
+  }
+
+  return {
+    success: true,
+    message: `Session closed successfully - removed ${closedLocks.length} lock file(s)`,
+    closedLocks,
+  };
+}
+
+export interface PauseStatus {
+  paused: boolean;
+  pausedAt?: string;
+}
+
+/**
+ * Check if a session is paused (pause marker file exists).
+ */
+export function getPauseStatus(sessionId: string): PauseStatus | null {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) return null;
+
+  const markerPath = path.join(sessionDir, PAUSE_MARKER_FILE);
+  try {
+    const stat = fs.statSync(markerPath);
+    return {
+      paused: true,
+      pausedAt: stat.mtime.toISOString(),
+    };
+  } catch {
+    return { paused: false };
+  }
+}
+
+/**
+ * Pause a session by creating a pause marker file.
+ */
+export function pauseSession(sessionId: string): PauseStatus | null {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) return null;
+
+  const markerPath = path.join(sessionDir, PAUSE_MARKER_FILE);
+  try {
+    fs.writeFileSync(markerPath, JSON.stringify({ pausedAt: new Date().toISOString() }));
+    return {
+      paused: true,
+      pausedAt: new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resume a session by removing the pause marker file.
+ */
+export function resumeSession(sessionId: string): PauseStatus | null {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) return null;
+
+  const markerPath = path.join(sessionDir, PAUSE_MARKER_FILE);
+  try {
+    if (fs.existsSync(markerPath)) {
+      fs.unlinkSync(markerPath);
+    }
+    return { paused: false };
+  } catch {
+    return null;
+  }
+}
+
+export interface InjectMessageResult {
+  success: boolean;
+  messageId?: string;
+  error?: string;
+}
+
+/**
+ * Inject a message into a session by appending to events.jsonl.
+ * This allows human intervention in stuck sessions.
+ */
+export function injectMessage(
+  sessionId: string,
+  content: string,
+  role: 'user' | 'assistant' = 'user'
+): InjectMessageResult {
+  const sessionDir = findSessionDir(sessionId);
+  if (!sessionDir) {
+    return { success: false, error: 'Session not found' };
+  }
+
+  const eventsFile = path.join(sessionDir, 'events.jsonl');
+
+  // Generate a unique message ID
+  const messageId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  const timestamp = new Date().toISOString();
+
+  let event: RawEvent;
+  if (role === 'user') {
+    event = {
+      type: 'user.message',
+      data: {
+        content,
+        source: 'manual',
+        interactionId: messageId,
+      },
+      id: messageId,
+      timestamp,
+      parentId: null,
+    };
+  } else {
+    event = {
+      type: 'assistant.message',
+      data: {
+        messageId,
+        content,
+        interactionId: messageId,
+      },
+      id: messageId,
+      timestamp,
+      parentId: null,
+    };
+  }
+
+  try {
+    // Append the event to events.jsonl
+    const line = JSON.stringify(event) + '\n';
+    fs.appendFileSync(eventsFile, line, 'utf8');
+    return { success: true, messageId };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to write message: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 export async function searchResearchArtifacts(query: string): Promise<ResearchFileMatch[]> {
