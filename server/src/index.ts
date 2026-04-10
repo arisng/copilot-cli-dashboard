@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 import router from './router.js';
+import { gcService } from './gcService.js';
 
 const DEFAULT_PORT = 3001;
 const app = express();
@@ -26,6 +27,25 @@ if (existsSync(clientDist)) {
   });
 }
 
+// GC status endpoint (for monitoring)
+app.get('/api/admin/gc-status', (req, res) => {
+  res.json({
+    enabled: process.env.COPILOT_ENABLE_AUTO_GC !== 'false',
+    running: gcService.isRunning(),
+    intervalHours: parseInt(process.env.COPILOT_GC_INTERVAL_HOURS || '24', 10),
+  });
+});
+
+app.post('/api/admin/gc-run', async (req, res) => {
+  const { dryRun = false } = req.body;
+  try {
+    const result = await gcService.runGC({ dryRun });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 void main().catch((error: unknown) => {
   if (isPortInUseError(error) && hasExplicitPort) {
     console.error(
@@ -40,11 +60,42 @@ void main().catch((error: unknown) => {
 
 async function main() {
   const requestedPort = parsePort(configuredPort ?? String(DEFAULT_PORT));
-  const port = await listenWithFallback(requestedPort, allowPortFallback);
+  const { port, server } = await listenWithFallback(requestedPort, allowPortFallback);
 
   if (!hasExplicitPort && port !== requestedPort) {
     console.log(`Port ${requestedPort} is already in use; using ${port} instead.`);
   }
+
+  // Initialize garbage collection service if enabled
+  if (process.env.COPILOT_ENABLE_AUTO_GC !== 'false') {
+    const intervalHours = parseInt(process.env.COPILOT_GC_INTERVAL_HOURS || '24', 10);
+    gcService.start(intervalHours);
+    console.log(`[GC] Garbage collection service started (interval: ${intervalHours}h)`);
+
+    // Run initial GC in dry-run mode to log what would be cleaned up
+    gcService.runGC({ dryRun: true }).then(result => {
+      console.log(`[GC] Initial scan: ${result.scanned} sessions, ${result.archived} would be archived, ${result.deleted} would be deleted`);
+    });
+  }
+
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('[Server] SIGTERM received, shutting down gracefully');
+    gcService.stop();
+    server.close(() => {
+      console.log('[Server] Closed');
+      process.exit(0);
+    });
+  });
+
+  process.on('SIGINT', () => {
+    console.log('[Server] SIGINT received, shutting down gracefully');
+    gcService.stop();
+    server.close(() => {
+      console.log('[Server] Closed');
+      process.exit(0);
+    });
+  });
 
   printStartupBanner(port);
 }
@@ -54,8 +105,8 @@ async function listenWithFallback(startPort: number, allowFallback: boolean) {
 
   while (port <= 65535) {
     try {
-      await listenOnPort(port);
-      return port;
+      const server = await listenOnPort(port);
+      return { port, server };
     } catch (error) {
       if (!allowFallback || !isPortInUseError(error)) {
         throw error;
@@ -68,12 +119,12 @@ async function listenWithFallback(startPort: number, allowFallback: boolean) {
   throw new Error(`No available port found starting at ${startPort}.`);
 }
 
-function listenOnPort(port: number): Promise<void> {
+function listenOnPort(port: number): Promise<import('http').Server> {
   return new Promise((resolve, reject) => {
     const server = app.listen(port);
 
     server.once('listening', () => {
-      resolve();
+      resolve(server);
     });
 
     server.once('error', reject);
