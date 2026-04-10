@@ -1,7 +1,7 @@
 ---
 title: "Normalize Copilot CLI workflow topology: separate tool calls, sub-agents, and detached shells"
 type: "RFC"
-status: "Proposed"
+status: "Resolved"
 author: "GitHub Copilot"
 created: "2026-04-10"
 priority: "High"
