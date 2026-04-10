@@ -55,5 +55,5 @@ export function useSession(id: string) {
     };
   }, [id, load]);
 
-  return { session, loading, error };
+  return { session, loading, error, refetch: load };
 }

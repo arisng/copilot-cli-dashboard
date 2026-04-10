@@ -3,6 +3,22 @@ interface Props {
   className?: string;
 }
 
+/**
+ * Format a UTC ISO timestamp to local datetime string
+ */
+export function formatLocalDateTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
 function formatRelative(ts: string): string {
   const diff = Date.now() - Date.parse(ts);
   const sec = Math.floor(diff / 1000);
@@ -27,7 +43,7 @@ export function formatDuration(ms: number): string {
 
 export function RelativeTime({ timestamp, className }: Props) {
   return (
-    <span className={className} title={new Date(timestamp).toLocaleString()}>
+    <span className={className} title={formatLocalDateTime(timestamp)}>
       {formatRelative(timestamp)}
     </span>
   );
