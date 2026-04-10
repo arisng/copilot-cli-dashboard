@@ -14,6 +14,11 @@ export interface ActiveSubAgent {
   sessionId?: string;
   lastActivityAt?: string;
   model?: string;
+  // Extended properties for workflow topology
+  modelInfo?: { name: string; source: string };
+  status?: { scope: 'worker' | 'session' };
+  dispatch?: { toolName: string; family: string; toolCallId: string };
+  agent?: { targetName: string; targetKind: string; instanceId: string };
 }
 
 export type SessionUsageMetricSource =
@@ -166,14 +171,57 @@ export interface SessionDetail extends SessionSummary {
 }
 
 // Workflow topology types
-export type WorkflowNodeType = 'user-prompt' | 'assistant-response' | 'tool-call' | 'sub-agent' | 'result';
+export type WorkflowNodeType =
+  | 'user-prompt'
+  | 'main-agent'
+  | 'tool-call'      // Now includes agent-management family tools (task, read_agent)
+  | 'sub-agent'      // True background subagents only (async background tasks)
+  | 'detached-shell' // NEW: Detached shell sessions
+  | 'result';
+
+// Normalized metadata for workflow nodes (AMTP Animal phase taxonomy)
+export interface WorkflowNodeDispatchMetadata {
+  toolName: string;
+  family: 'agent-management' | 'orchestration' | 'tool' | string;
+  toolCallId: string;
+}
+
+export interface WorkflowNodeAgentMetadata {
+  targetName: string;
+  targetKind: string;
+  instanceId: string;
+}
+
+export interface WorkflowNodeModelMetadata {
+  name: string | null;
+  source: string | null;
+}
 
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
   label: string;
+  agentType?: string;      // Displayed prominently (e.g., 'coder', 'explorer', 'orchestrator')
+  agentName?: string;      // Custom agent name from args.name
+  model?: string;
   description?: string;
-  metadata?: Record<string, unknown>;
+  roundIndex?: number;
+  isMainAgent?: boolean;
+  metadata?: {
+    toolCallId?: string;
+    toolName?: string;
+    dispatch?: WorkflowNodeDispatchMetadata;
+    agent?: WorkflowNodeAgentMetadata;
+    model?: WorkflowNodeModelMetadata;
+    // Dispatch mode from original tool args (e.g., 'background' vs 'sync')
+    backgroundMode?: boolean;
+    // NEW: Background execution info
+    backgroundInfo?: {
+      processId?: string;
+      detached: boolean;
+      shellSession?: boolean;
+    };
+  };
   status?: 'pending' | 'running' | 'completed' | 'error';
   timestamp?: string;
 }
@@ -194,6 +242,39 @@ export interface TurnWorkflow {
   turnId: string;
   turnLabel: string;
   graph: WorkflowGraph;
+}
+
+// === AMTP Plan API Types ===
+
+export interface SessionActionResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface PauseStatus {
+  paused: boolean;
+}
+
+export interface GCStatus {
+  enabled: boolean;
+  running: boolean;
+  intervalHours: number;
+}
+
+export interface GCResult {
+  scanned: number;
+  archived: number;
+  deleted: number;
+  bytesReclaimed: number;
+  errors: string[];
+}
+
+export interface SessionSearchResult {
+  sessionId: string;
+  content: string;
+  sourceType: string;
+  sourceId: string;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -257,4 +338,78 @@ export async function searchResearch(q: string): Promise<SearchResult[]> {
 
   const data = await fetchJson<{ results: SearchResult[] }>(`/api/search?${params.toString()}`);
   return data.results;
+}
+
+// === Session Action API Functions ===
+
+const API_BASE = '/api';
+
+export async function closeSession(sessionId: string): Promise<SessionActionResult> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/close`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to close session: ${res.status}`);
+  return res.json();
+}
+
+export async function retrySession(sessionId: string, toolCallId?: string): Promise<SessionActionResult> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toolCallId }),
+  });
+  if (!res.ok) throw new Error(`Failed to retry: ${res.status}`);
+  return res.json();
+}
+
+export async function getPauseStatus(sessionId: string): Promise<PauseStatus> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/pause`);
+  if (!res.ok) throw new Error(`Failed to get pause status: ${res.status}`);
+  return res.json();
+}
+
+export async function pauseSession(sessionId: string): Promise<SessionActionResult> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/pause`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to pause: ${res.status}`);
+  return res.json();
+}
+
+export async function resumeSession(sessionId: string): Promise<SessionActionResult> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/resume`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to resume: ${res.status}`);
+  return res.json();
+}
+
+export async function injectMessage(sessionId: string, content: string, role: 'user' | 'assistant' = 'user'): Promise<SessionActionResult> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/message`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, role }),
+  });
+  if (!res.ok) throw new Error(`Failed to inject message: ${res.status}`);
+  return res.json();
+}
+
+// === Admin/GC API Functions ===
+
+export async function getGCStatus(): Promise<GCStatus> {
+  const res = await fetch(`${API_BASE}/admin/gc-status`);
+  if (!res.ok) throw new Error(`Failed to get GC status: ${res.status}`);
+  return res.json();
+}
+
+export async function runGC(dryRun = false): Promise<GCResult> {
+  const res = await fetch(`${API_BASE}/admin/gc-run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dryRun }),
+  });
+  if (!res.ok) throw new Error(`Failed to run GC: ${res.status}`);
+  return res.json();
+}
+
+// === Session Search API Function ===
+
+export async function searchSessions(query: string): Promise<SessionSearchResult[]> {
+  const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  return res.json();
 }
