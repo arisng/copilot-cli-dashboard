@@ -536,50 +536,72 @@ function applyNodeFilter(
   edges: WorkflowEdge[],
   filter: FilterState,
 ): { rounds: WorkflowRound[]; nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-  // Core node types that are ALWAYS shown (not affected by filters)
+  // user-prompt and result are unconditionally preserved
+  const ALWAYS_KEEP = new Set(['user-prompt', 'result']);
+  // Core types that survive node-type filter by default; main-agent may be pruned below
   const CORE_NODE_TYPES = new Set(['user-prompt', 'main-agent', 'result']);
-  
+
   let filteredNodes = nodes;
-  
+
   // Apply node type filter
   if (filter.nodeType === 'agents-only') {
-    // Show: user-prompt, main-agent, sub-agent, detached-shell, result
-    // Hide: tool-call
+    // Show: user-prompt, main-agent, sub-agent, detached-shell, result — hide: tool-call
     const allowedTypes = new Set(['user-prompt', 'main-agent', 'sub-agent', 'detached-shell', 'result']);
     filteredNodes = filteredNodes.filter(n => allowedTypes.has(n.type));
   }
 
   if (filter.nodeType === 'tools-only') {
-    // Show: user-prompt, main-agent, tool-call, result
-    // Hide: sub-agent, detached-shell
+    // Show: user-prompt, main-agent, tool-call, result — hide: sub-agent, detached-shell
     const allowedTypes = new Set(['user-prompt', 'main-agent', 'tool-call', 'result']);
     filteredNodes = filteredNodes.filter(n => allowedTypes.has(n.type));
   }
-  
+
   // Apply agent type filter (only to non-core nodes)
   if (filter.agentTypes.length > 0) {
     filteredNodes = filteredNodes.filter(n => {
-      if (CORE_NODE_TYPES.has(n.type)) return true; // Always keep core nodes
+      if (CORE_NODE_TYPES.has(n.type)) return true;
       const agentType = n.agentType || extractAgentType(n);
       return agentType && filter.agentTypes.includes(agentType);
     });
   }
-  
+
   // Apply dispatch family filter (only to non-core nodes)
   if (filter.dispatchFamilies.length > 0) {
     filteredNodes = filteredNodes.filter(n => {
-      if (CORE_NODE_TYPES.has(n.type)) return true; // Always keep core nodes
+      if (CORE_NODE_TYPES.has(n.type)) return true;
       const family = n.metadata?.dispatch?.family;
       return family && filter.dispatchFamilies.includes(family);
     });
   }
-  
+
+  // Path-pruning: when agent-type or family filters are active, remove main-agent
+  // (Orchestrator) nodes whose rounds have no surviving response nodes.
+  // This keeps only the orchestrators that actually participate in filtered paths.
+  const hasSpecificFilter = filter.agentTypes.length > 0 || filter.dispatchFamilies.length > 0;
+  if (hasSpecificFilter) {
+    const survivingResponseIds = new Set(
+      filteredNodes.filter(n => !CORE_NODE_TYPES.has(n.type)).map(n => n.id)
+    );
+    const mainAgentIdsWithSurvivors = new Set<string>();
+    for (const round of rounds) {
+      if (round.responseNodes.some(n => survivingResponseIds.has(n.id))) {
+        mainAgentIdsWithSurvivors.add(round.mainAgentNode.id);
+      }
+    }
+    filteredNodes = filteredNodes.filter(n => {
+      if (n.type === 'main-agent' && !ALWAYS_KEEP.has(n.type)) {
+        return mainAgentIdsWithSurvivors.has(n.id);
+      }
+      return true;
+    });
+  }
+
   // Build a set of kept node IDs
   const keptNodeIds = new Set(filteredNodes.map(n => n.id));
-  
+
   // Filter edges to only include connections between kept nodes
   const filteredEdges = edges.filter(e => keptNodeIds.has(e.from) && keptNodeIds.has(e.to));
-  
+
   // Rebuild rounds with filtered nodes
   const filteredRounds = rounds
     .map(round => ({
@@ -587,7 +609,7 @@ function applyNodeFilter(
       responseNodes: round.responseNodes.filter(n => keptNodeIds.has(n.id)),
     }))
     .filter(round => keptNodeIds.has(round.mainAgentNode.id));
-  
+
   return { rounds: filteredRounds, nodes: filteredNodes, edges: filteredEdges };
 }
 
@@ -1251,21 +1273,23 @@ function NodeDetailsPanel({ node, onClose }: {
   );
 }
 
-// Available agent types for filtering
-const AVAILABLE_AGENT_TYPES = ['coder', 'explorer', 'planner', 'reviewer', 'tester', 'writer', 'orchestrator'];
+// Canonical ordering for agent types and dispatch families
+const AGENT_TYPE_ORDER = ['coder', 'explorer', 'planner', 'reviewer', 'tester', 'writer', 'orchestrator'];
+const DISPATCH_FAMILY_ORDER = ['agent-management', 'orchestration', 'execution', 'tool'];
 
-// Available dispatch families for filtering - AMTP v2: includes 'execution' for detached-shell
-const AVAILABLE_DISPATCH_FAMILIES = ['agent-management', 'orchestration', 'execution', 'tool'];
-
-// Filter control component with new filter options
+// Filter control component — receives dynamically derived option lists from the graph data
 function FilterControl({
   filter,
   onChange,
   nodeCounts,
+  availableAgentTypes,
+  availableDispatchFamilies,
 }: {
   filter: FilterState;
   onChange: (filter: FilterState) => void;
   nodeCounts: { all: number; agentsOnly: number; toolsOnly: number };
+  availableAgentTypes: string[];
+  availableDispatchFamilies: string[];
 }) {
   const toggleAgentType = (agentType: string) => {
     const newTypes = filter.agentTypes.includes(agentType)
@@ -1320,10 +1344,11 @@ function FilterControl({
         </button>
       </div>
 
-      {/* Agent type filter */}
+      {/* Agent type filter — chips derived dynamically from graph data */}
+      {availableAgentTypes.length > 0 && (
       <div className="flex items-center gap-1">
-        <span className="text-xs text-gh-muted mr-1">Agent:</span>
-        {AVAILABLE_AGENT_TYPES.map(agentType => (
+        <span className="text-xs text-gh-muted mr-1">Agent Type:</span>
+        {availableAgentTypes.map(agentType => (
           <button
             key={agentType}
             onClick={() => toggleAgentType(agentType)}
@@ -1347,11 +1372,13 @@ function FilterControl({
           </button>
         )}
       </div>
+      )}
 
-      {/* Dispatch family filter */}
+      {/* Dispatch family filter — chips derived dynamically from graph data */}
+      {availableDispatchFamilies.length > 0 && (
       <div className="flex items-center gap-1">
-        <span className="text-xs text-gh-muted mr-1">Family:</span>
-        {AVAILABLE_DISPATCH_FAMILIES.map(family => (
+        <span className="text-xs text-gh-muted mr-1">Tool Family:</span>
+        {availableDispatchFamilies.map(family => (
           <button
             key={family}
             onClick={() => toggleDispatchFamily(family)}
@@ -1375,6 +1402,7 @@ function FilterControl({
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1486,6 +1514,41 @@ export function WorkflowTopologyView({
     return { all: allCount, agentsOnly: agentsOnlyCount, toolsOnly: toolsOnlyCount };
   }, [enrichedNodes]);
 
+  // Derive available filter options from graph data (only show chips that exist in the current turn)
+  const availableAgentTypes = useMemo(() => {
+    const types = new Set<string>();
+    enrichedNodes.forEach(n => {
+      const t = n.agentType || extractAgentType(n);
+      if (t) types.add(t);
+    });
+    // Preserve canonical ordering; append unknown types alphabetically at the end
+    return [
+      ...AGENT_TYPE_ORDER.filter(t => types.has(t)),
+      ...[...types].filter(t => !AGENT_TYPE_ORDER.includes(t)).sort(),
+    ];
+  }, [enrichedNodes]);
+
+  const availableDispatchFamilies = useMemo(() => {
+    const families = new Set<string>();
+    enrichedNodes.forEach(n => {
+      const family = n.metadata?.dispatch?.family;
+      if (family) families.add(family as string);
+    });
+    return DISPATCH_FAMILY_ORDER.filter(f => families.has(f));
+  }, [enrichedNodes]);
+
+  // Clear stale filter selections when turn changes and new data lacks those values
+  useEffect(() => {
+    setFilter(prev => {
+      const newAgentTypes = prev.agentTypes.filter(t => availableAgentTypes.includes(t));
+      const newFamilies = prev.dispatchFamilies.filter(f => availableDispatchFamilies.includes(f));
+      if (newAgentTypes.length === prev.agentTypes.length && newFamilies.length === prev.dispatchFamilies.length) {
+        return prev;
+      }
+      return { ...prev, agentTypes: newAgentTypes, dispatchFamilies: newFamilies };
+    });
+  }, [availableAgentTypes, availableDispatchFamilies]);
+
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId]
@@ -1520,6 +1583,8 @@ export function WorkflowTopologyView({
               filter={filter}
               onChange={setFilter}
               nodeCounts={nodeCounts}
+              availableAgentTypes={availableAgentTypes}
+              availableDispatchFamilies={availableDispatchFamilies}
             />
             <div className="w-px h-5 bg-gh-border mx-1" />
             <label className="text-xs text-gh-muted">Turn:</label>
