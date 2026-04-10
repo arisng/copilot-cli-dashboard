@@ -90,7 +90,40 @@ export interface ParsedMessage {
   interactionId?: string;
 }
 
+// ============================================================================
+// Normalized Sub-Agent Taxonomy (AMTP Plan - Animal Phase)
+// ============================================================================
+
+/** Dispatch namespace - Tool invocation data */
+export interface DispatchInfo {
+  toolName: string; // 'task', 'read_agent', 'task_complete'
+  family: 'agent-management' | 'orchestration' | 'tool';
+  toolCallId: string; // Authoritative per-dispatch correlation key
+}
+
+/** Agent namespace - Runtime agent identity */
+export interface AgentIdentity {
+  targetName: string; // 'explore', 'general-purpose', 'code-review'
+  targetKind: 'built-in' | 'custom' | 'orchestrator' | 'unknown';
+  instanceId: string; // Human-readable alias (e.g., "audit-modules")
+}
+
+/** Model namespace - Model provenance */
+export interface ModelInfo {
+  name: string | null;
+  source: 'dispatch-override' | 'custom-agent-default' | 'session-fallback' | 'inferred' | null;
+}
+
+/** Status namespace - Completion state */
+export interface StatusInfo {
+  scope: 'session' | 'dispatch' | 'worker';
+  kind: 'pending' | 'running' | 'completed' | 'error' | 'idle';
+  sourceEvent: string; // Event type that determined this status
+}
+
+/** Enhanced ActiveSubAgent with normalized taxonomy fields */
 export interface ActiveSubAgent {
+  // Legacy fields (keep for backward compat)
   toolCallId: string;
   agentId: string; // The unique agent identifier (e.g., "audit-modules")
   agentName: string;
@@ -100,6 +133,35 @@ export interface ActiveSubAgent {
   sessionId?: string; // sub-agent's own session directory ID
   lastActivityAt?: string; // ISO 8601 timestamp
   model?: string;
+
+  // New normalized fields
+  dispatch: DispatchInfo;
+  agent: AgentIdentity;
+  modelInfo: ModelInfo;
+  status: StatusInfo;
+}
+
+/** WorkflowNode for client API types */
+export interface WorkflowNode {
+  id: string;
+  type: 'user-prompt' | 'main-agent' | 'sub-agent' | 'tool-call' | 'result';
+  label: string;
+  agentType?: string;
+  agentName?: string; // Custom agent name (from args.name)
+  model?: string;
+  description?: string;
+  roundIndex?: number;
+  isMainAgent?: boolean;
+  metadata?: {
+    toolCallId?: string;
+    toolName?: string;
+    dispatch?: DispatchInfo;
+    agent?: AgentIdentity;
+    model?: ModelInfo;
+    [key: string]: unknown;
+  };
+  status?: 'pending' | 'running' | 'completed' | 'error';
+  timestamp?: string;
 }
 
 export type SessionUsageMetricSource =
