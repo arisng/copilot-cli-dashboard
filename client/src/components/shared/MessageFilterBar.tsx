@@ -28,12 +28,14 @@ export function MultiSelectDropdown({
   selected,
   onChange,
   placeholder = 'Select…',
+  inlineLabel = false,
 }: {
   label: string;
   options: string[];
   selected: string[];
   onChange: (selected: string[]) => void;
   placeholder?: string;
+  inlineLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,7 +65,10 @@ export function MultiSelectDropdown({
       : `${selected.length} selected`;
 
   return (
-    <div ref={containerRef} className="relative flex min-w-0 flex-col gap-1">
+    <div
+      ref={containerRef}
+      className={`relative flex min-w-0 gap-1 ${inlineLabel ? 'items-center flex-row' : 'flex-col'}`}
+    >
       <span className="text-[11px] font-medium uppercase tracking-wide text-gh-muted/70">{label}</span>
       <button
         type="button"
@@ -86,9 +91,15 @@ export function MultiSelectDropdown({
 
       {open && (
         <div
-          className="absolute z-20 mt-1 max-h-64 min-w-full overflow-y-auto rounded-md border border-gh-border bg-gh-bg py-1 shadow-lg"
+          className={`absolute z-20 max-h-64 overflow-y-auto rounded-md border border-gh-border bg-gh-bg py-1 shadow-lg ${
+            inlineLabel ? 'mt-1' : 'mt-1 min-w-full'
+          }`}
           role="listbox"
-          style={{ top: '100%' }}
+          style={{
+            top: '100%',
+            left: inlineLabel ? 0 : undefined,
+            minWidth: inlineLabel ? 'max(10rem, 100%)' : undefined,
+          }}
         >
           {options.map((option) => {
             const isSelected = selected.includes(option);

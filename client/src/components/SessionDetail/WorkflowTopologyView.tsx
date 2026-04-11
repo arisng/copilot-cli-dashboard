@@ -42,6 +42,20 @@ interface FilterState {
   tools: string[];       // Filter by tool name (replaces dispatchFamilies)
 }
 
+const CORE_NODE_TYPES = new Set(['user-prompt', 'main-agent', 'result']);
+
+function getAllowedNodeTypes(nodeType: NodeTypeFilter): Set<WorkflowNode['type']> | null {
+  if (nodeType === 'agents-only') {
+    return new Set(['user-prompt', 'main-agent', 'sub-agent', 'detached-shell', 'result']);
+  }
+
+  if (nodeType === 'tools-only') {
+    return new Set(['user-prompt', 'main-agent', 'tool-call', 'result']);
+  }
+
+  return null;
+}
+
 // Helper to determine dispatch family from tool name and arguments
 function determineDispatchFamily(toolName: string, args: Record<string, unknown> | undefined): WorkflowNodeDispatchMetadata['family'] {
   // Agent management tools
@@ -537,23 +551,11 @@ function applyNodeFilter(
   edges: WorkflowEdge[],
   filter: FilterState,
 ): { rounds: WorkflowRound[]; nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-  // user-prompt and result are unconditionally preserved
-  const ALWAYS_KEEP = new Set(['user-prompt', 'result']);
-  // Core types that survive node-type filter by default; main-agent may be pruned below
-  const CORE_NODE_TYPES = new Set(['user-prompt', 'main-agent', 'result']);
-
   let filteredNodes = nodes;
 
   // Apply node type filter
-  if (filter.nodeType === 'agents-only') {
-    // Show: user-prompt, main-agent, sub-agent, detached-shell, result — hide: tool-call
-    const allowedTypes = new Set(['user-prompt', 'main-agent', 'sub-agent', 'detached-shell', 'result']);
-    filteredNodes = filteredNodes.filter(n => allowedTypes.has(n.type));
-  }
-
-  if (filter.nodeType === 'tools-only') {
-    // Show: user-prompt, main-agent, tool-call, result — hide: sub-agent, detached-shell
-    const allowedTypes = new Set(['user-prompt', 'main-agent', 'tool-call', 'result']);
+  const allowedTypes = getAllowedNodeTypes(filter.nodeType);
+  if (allowedTypes) {
     filteredNodes = filteredNodes.filter(n => allowedTypes.has(n.type));
   }
 
@@ -579,7 +581,8 @@ function applyNodeFilter(
   // Path-pruning: when agent-type or family filters are active, remove main-agent
   // (Orchestrator) nodes whose rounds have no surviving response nodes.
   // This keeps only the orchestrators that actually participate in filtered paths.
-  const hasSpecificFilter = filter.agentTypes.length > 0 || filter.tools.length > 0;
+  const hasSpecificFilter =
+    filter.nodeType !== 'all' || filter.agentTypes.length > 0 || filter.tools.length > 0;
   if (hasSpecificFilter) {
     const survivingResponseIds = new Set(
       filteredNodes.filter(n => !CORE_NODE_TYPES.has(n.type)).map(n => n.id)
@@ -591,7 +594,7 @@ function applyNodeFilter(
       }
     }
     filteredNodes = filteredNodes.filter(n => {
-      if (n.type === 'main-agent' && !ALWAYS_KEEP.has(n.type)) {
+      if (n.type === 'main-agent') {
         return mainAgentIdsWithSurvivors.has(n.id);
       }
       return true;
@@ -1376,6 +1379,7 @@ function FilterControl({
           selected={filter.tools}
           onChange={(tools) => onChange({ ...filter, tools })}
           placeholder="All tools"
+          inlineLabel
         />
       )}
     </div>
@@ -1477,17 +1481,15 @@ export function WorkflowTopologyView({
 
   // Calculate node counts for filter display
   const nodeCounts = useMemo(() => {
-    const allCount = enrichedNodes.length;
-    // AMTP v2: agentsOnly includes true background sub-agents and detached-shell (hides tool-call)
-    const agentsOnlyCount = enrichedNodes.filter(
-      n => n.type === 'user-prompt' || n.type === 'main-agent' || n.type === 'sub-agent' || n.type === 'detached-shell' || n.type === 'result'
-    ).length;
-    // toolsOnly hides sub-agent and detached-shell
-    const toolsOnlyCount = enrichedNodes.filter(
-      n => n.type === 'user-prompt' || n.type === 'main-agent' || n.type === 'tool-call' || n.type === 'result'
-    ).length;
-    return { all: allCount, agentsOnly: agentsOnlyCount, toolsOnly: toolsOnlyCount };
-  }, [enrichedNodes]);
+    const countForNodeType = (nodeType: NodeTypeFilter) =>
+      applyNodeFilter(enrichedRounds, enrichedNodes, enrichedEdges, { ...filter, nodeType }).nodes.length;
+
+    return {
+      all: countForNodeType('all'),
+      agentsOnly: countForNodeType('agents-only'),
+      toolsOnly: countForNodeType('tools-only'),
+    };
+  }, [enrichedRounds, enrichedNodes, enrichedEdges, filter]);
 
   // Derive available agent types from sub-agent nodes only (background tasks; exclude orchestrator and tools)
   const availableAgentTypes = useMemo(() => {
@@ -1549,56 +1551,48 @@ export function WorkflowTopologyView({
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Turn selector header */}
       <div className="shrink-0 border-b border-gh-border bg-gh-surface/30 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gh-text">Workflow Topology</p>
-            <p className="text-xs text-gh-muted mt-0.5">
-              Multi-turn orchestration: User → Main Agent → Sub-Agents → Result
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <FilterControl
-              filter={filter}
-              onChange={setFilter}
-              nodeCounts={nodeCounts}
-              availableAgentTypes={availableAgentTypes}
-              availableTools={availableTools}
-            />
-            <div className="w-px h-5 bg-gh-border mx-1" />
-            <label className="text-xs text-gh-muted">Turn:</label>
-            <select
-              value={selectedTurnId}
-              onChange={(e) => {
-                setSelectedTurnId(e.target.value);
-                setSelectedNodeId(null);
-              }}
-              className="min-w-[12rem] rounded-md border border-gh-border bg-gh-bg px-2 py-1.5 text-xs text-gh-text focus:border-gh-accent focus:outline-none"
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-gh-muted">Turn:</label>
+          <select
+            value={selectedTurnId}
+            onChange={(e) => {
+              setSelectedTurnId(e.target.value);
+              setSelectedNodeId(null);
+            }}
+            className="min-w-[12rem] rounded-md border border-gh-border bg-gh-bg px-2 py-1.5 text-xs text-gh-text focus:border-gh-accent focus:outline-none"
+          >
+            {turnOptions.map((turn, index) => (
+              <option key={turn.turnId} value={turn.turnId}>
+                Turn {index + 1}: {turn.label}
+              </option>
+            ))}
+          </select>
+          <div className="h-5 w-px bg-gh-border mx-1" />
+          <FilterControl
+            filter={filter}
+            onChange={setFilter}
+            nodeCounts={nodeCounts}
+            availableAgentTypes={availableAgentTypes}
+            availableTools={availableTools}
+          />
+          {onToggleFullScreen && (
+            <button
+              type="button"
+              onClick={onToggleFullScreen}
+              title={isFullScreen ? 'Exit full screen' : 'Full screen'}
+              className="ml-auto inline-flex items-center justify-center rounded-md border border-gh-border bg-gh-bg p-1.5 text-gh-muted transition-colors hover:border-gh-accent hover:text-gh-text focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70"
             >
-              {turnOptions.map((turn, index) => (
-                <option key={turn.turnId} value={turn.turnId}>
-                  Turn {index + 1}: {turn.label}
-                </option>
-              ))}
-            </select>
-            {onToggleFullScreen && (
-              <button
-                type="button"
-                onClick={onToggleFullScreen}
-                title={isFullScreen ? 'Exit full screen' : 'Full screen'}
-                className="inline-flex items-center justify-center rounded-md border border-gh-border bg-gh-bg p-1.5 text-gh-muted transition-colors hover:border-gh-accent hover:text-gh-text focus:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/70"
-              >
-                {isFullScreen ? (
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-                    <path d="M5.5 1.5A1.5 1.5 0 0 0 4 3v2.5h1V3a.5.5 0 0 1 .5-.5h2.5V1.5H5.5Zm5 0V1H8v1.5h2.5V6h1V3a.5.5 0 0 0-.5-.5h-2.5Zm-5 13A1.5 1.5 0 0 1 4 13v-2.5h1V13a.5.5 0 0 0 .5.5h2.5V15H5.5Zm5 0V15H8v-1.5h2.5V10h1v3a.5.5 0 0 1-.5.5h-2.5Z"/>
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-                    <path d="M1.5 1h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0V2H1.5a.5.5 0 0 1 0-1Zm11 0h-2a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 1 0V2h1.5a.5.5 0 0 0 0-1Zm-11 14h2a.5.5 0 0 0 .5-.5v-2a.5.5 0 0 0-1 0v1.5H1.5a.5.5 0 0 0 0 1Zm11 0h-2a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 1 0v1.5h1.5a.5.5 0 0 1 0 1Z"/>
-                  </svg>
-                )}
-              </button>
-            )}
-          </div>
+              {isFullScreen ? (
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                  <path d="M5.5 1.5A1.5 1.5 0 0 0 4 3v2.5h1V3a.5.5 0 0 1 .5-.5h2.5V1.5H5.5Zm5 0V1H8v1.5h2.5V6h1V3a.5.5 0 0 0-.5-.5h-2.5Zm-5 13A1.5 1.5 0 0 1 4 13v-2.5h1V13a.5.5 0 0 0 .5.5h2.5V15H5.5Zm5 0V15H8v-1.5h2.5V10h1v3a.5.5 0 0 1-.5.5h-2.5Z"/>
+                </svg>
+              ) : (
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                  <path d="M1.5 1h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0V2H1.5a.5.5 0 0 1 0-1Zm11 0h-2a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 1 0V2h1.5a.5.5 0 0 0 0-1Zm-11 14h2a.5.5 0 0 0 .5-.5v-2a.5.5 0 0 0-1 0v1.5H1.5a.5.5 0 0 0 0 1Zm11 0h-2a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 1 0v1.5h1.5a.5.5 0 0 1 0 1Z"/>
+                </svg>
+              )}
+            </button>
+          )}
         </div>
         
         {/* Graph stats */}
@@ -1617,7 +1611,7 @@ export function WorkflowTopologyView({
               {rounds.length} round{rounds.length !== 1 ? 's' : ''}
             </span>
           )}
-          {(filter.agentTypes.length > 0 || filter.tools.length > 0) && (
+          {(filter.nodeType !== 'all' || filter.agentTypes.length > 0 || filter.tools.length > 0) && (
             <span className="flex items-center gap-1 text-gh-accent">
               <span className="w-2 h-2 rounded-full bg-gh-accent animate-pulse" />
               Filtered

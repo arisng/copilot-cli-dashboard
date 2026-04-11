@@ -814,15 +814,25 @@ function DetailPanelHeader({
     'session-db': 'border-gh-border bg-gh-bg/70 text-gh-muted',
   };
 
+  const isWorkflowCompactHeader = activeView === 'workflow';
+
   return (
     <div className="shrink-0 border-b border-gh-border bg-gh-surface/40 px-4 py-3">
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p id="session-detail-panel-heading" className="text-sm font-semibold text-gh-text">
-            {titleByView[activeView]}
-          </p>
-          <p className="mt-1 text-xs leading-5 text-gh-muted">{descriptionByView[activeView]}</p>
-          <p className="mt-2 text-xs text-gh-muted/80">
+          {isWorkflowCompactHeader ? (
+            <span id="session-detail-panel-heading" className="sr-only">
+              {titleByView[activeView]}
+            </span>
+          ) : (
+            <>
+              <p id="session-detail-panel-heading" className="text-sm font-semibold text-gh-text">
+                {titleByView[activeView]}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-gh-muted">{descriptionByView[activeView]}</p>
+            </>
+          )}
+          <p className={`${isWorkflowCompactHeader ? '' : 'mt-2 '}text-xs text-gh-muted/80`}>
             {activeView === 'threads' && activeThread
               ? `${activeThread.agentId}${activeThread.description ? ` · ${activeThread.description}` : ''}`
               : activeView === 'session-db' && dbViewMode === 'table'
