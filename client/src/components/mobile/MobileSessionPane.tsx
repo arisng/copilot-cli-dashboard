@@ -7,6 +7,7 @@ import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
 import { FileTree } from '../SessionDetail/FileTree.tsx';
 import { ImagePreview } from '../SessionDetail/ImagePreview.tsx';
 import { isImageFile } from '../../utils/fileUtils.ts';
+import { ArtifactViewer } from '../shared/ArtifactViewer';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
@@ -1083,22 +1084,12 @@ function ArtifactPanel({ group, sessionId, title, emptyMessage }: ArtifactPanelP
           subtitle={`${formatBytes(selectedFile.sizeBytes)} · ${selectedFile.path}`}
         >
           <div className="overflow-hidden rounded-xl border border-gh-border bg-gh-bg/50">
-            {isImageFile(selectedFile.name) ? (
-              <ImagePreview
-                sessionId={sessionId}
-                filePath={selectedFile.path}
-                fileName={selectedFile.name}
-                fileSizeBytes={selectedFile.sizeBytes}
-              />
-            ) : selectedFile.content ? (
-              <div className="p-3">
-                <MarkdownRenderer content={selectedFile.content} variant="mobile" collapsible />
-              </div>
-            ) : (
-              <div className="p-4 text-sm text-gh-muted">
-                No text content is available for this file.
-              </div>
-            )}
+            <ArtifactViewer
+              entry={selectedFile}
+              sessionId={sessionId}
+              isMobile={true}
+              collapsible={true}
+            />
           </div>
         </MobileSectionCard>
       )}
