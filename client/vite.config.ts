@@ -21,6 +21,7 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'markdown-vendor': ['react-markdown', 'remark-gfm'],
           'syntax-vendor': ['react-syntax-highlighter'],
+          'monaco-vendor': ['monaco-editor', '@monaco-editor/react'],
         },
       },
     },
