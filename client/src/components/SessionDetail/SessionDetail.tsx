@@ -179,6 +179,7 @@ import type {
 import { isImageFile } from '../../utils/fileUtils.ts';
 import { FileTree } from './FileTree.tsx';
 import { WorkflowTopologyView } from './WorkflowTopologyView.tsx';
+import { ArtifactViewer } from '../shared/ArtifactViewer';
 import {
   type MessageFilterState,
   DEFAULT_MESSAGE_FILTER_STATE,
@@ -337,34 +338,15 @@ function renderArtifactContent(
   forceMarkdown = false,
   collapsible = false,
 ) {
-  // Handle image files
-  if (isImageFile(entry.name)) {
-    return (
-      <ImagePreview
-        sessionId={sessionId}
-        filePath={entry.path}
-        fileName={entry.name}
-        fileSizeBytes={entry.sizeBytes}
-      />
-    );
-  }
-
-  // Handle text files
-  const content = entry.content?.trim();
-  if (!content) {
-    return (
-      <p className="rounded-xl border border-dashed border-gh-border bg-gh-surface/20 p-4 text-sm text-gh-muted">
-        No text content is available for this file.
-      </p>
-    );
-  }
-
-  if (forceMarkdown || /\.(md|markdown|mdown|mkdn|mkd)$/i.test(entry.name)) {
-    return <MarkdownRenderer content={content} variant="desktop" collapsible={collapsible} />;
-  }
-
-  // For non-markdown files, still use MarkdownRenderer but with plain text handling
-  return <MarkdownRenderer content={content} variant="desktop" collapsible={collapsible} />;
+  return (
+    <ArtifactViewer
+      entry={entry}
+      sessionId={sessionId}
+      forceMarkdown={forceMarkdown}
+      collapsible={collapsible}
+      isMobile={false}
+    />
+  );
 }
 
 function buildTodoItemsFromDb(
