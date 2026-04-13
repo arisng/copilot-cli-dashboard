@@ -916,7 +916,7 @@ function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup;
 
           <section className="min-h-0 overflow-y-auto p-4">
             {selectedFile ? (
-              <div className="flex min-h-0 flex-col gap-3">
+              <div className="flex min-h-0 flex-col gap-3 h-full">
                 <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-semibold text-gh-text">{selectedFile.name}</h4>
