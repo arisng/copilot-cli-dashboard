@@ -929,7 +929,7 @@ function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup;
                   </div>
                   <p className="mt-1 text-[11px] font-mono text-gh-muted">{selectedFile.path}</p>
                 </div>
-                <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4 h-[600px]">
+                <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4 flex-1 min-h-0 overflow-hidden">
                   <ArtifactViewer
                     entry={selectedFile}
                     sessionId={sessionId}
