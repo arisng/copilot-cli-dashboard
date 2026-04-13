@@ -332,14 +332,29 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     }
   }, [content]);
 
-  // Handle window resize
+  // Handle window resize and container resize
   useEffect(() => {
     const handleResize = () => {
       editorRef.current?.layout();
     };
     
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    
+    // Use ResizeObserver to handle container size changes
+    let resizeObserver: ResizeObserver | null = null;
+    if (containerRef.current && 'ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(() => {
+        editorRef.current?.layout();
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeObserver && containerRef.current) {
+        resizeObserver.unobserve(containerRef.current);
+      }
+    };
   }, []);
 
   if (error) {
@@ -366,8 +381,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
       )}
       <div
         ref={containerRef}
-        className="rounded-xl border border-gh-border overflow-hidden"
-        style={{ height: '600px', minHeight: '300px' }}
+        className="rounded-xl border border-gh-border overflow-hidden h-full min-h-0"
       />
     </div>
   );
