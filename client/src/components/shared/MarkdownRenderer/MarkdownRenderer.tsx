@@ -112,6 +112,8 @@ export interface MarkdownRendererProps {
   className?: string;
   sanitize?: boolean;
   collapsible?: boolean;
+  /** Enable rich media rendering (images, GIFs, videos) in markdown */
+  enableMedia?: boolean;
 }
 
 // ============================================================================
@@ -364,6 +366,96 @@ export const desktopMarkdownComponents: Components = {
     return <>{value}</>;
   },
 };
+
+// ============================================================================
+// Rich Media Components
+// ============================================================================
+
+/**
+ * Check if a URL points to a video file
+ */
+function isVideoUrl(src: string): boolean {
+  const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.mkv'];
+  const lowerSrc = src.toLowerCase();
+  return videoExtensions.some(ext => lowerSrc.endsWith(ext));
+}
+
+/**
+ * Check if a URL points to an animated GIF
+ */
+function isGifUrl(src: string): boolean {
+  return src.toLowerCase().endsWith('.gif');
+}
+
+interface MediaImageProps {
+  src?: string;
+  alt?: string;
+  title?: string;
+}
+
+/**
+ * Rich media image component that handles images, GIFs, and videos
+ */
+const MediaImage: React.FC<MediaImageProps> = ({ src, alt, title }) => {
+  if (!src) return null;
+
+  // Handle video files
+  if (isVideoUrl(src)) {
+    return (
+      <div className="my-4 rounded-xl overflow-hidden border border-gh-border bg-gh-surface">
+        <video
+          src={src}
+          title={title || alt}
+          controls
+          preload="metadata"
+          className="w-full max-h-[600px] object-contain"
+        >
+          <p className="p-4 text-sm text-gh-muted">
+            Your browser does not support the video tag. 
+            <a href={src} target="_blank" rel="noopener noreferrer" className="text-gh-accent ml-1">
+              Download video
+            </a>
+          </p>
+        </video>
+        {(alt || title) && (
+          <p className="px-4 py-2 text-xs text-gh-muted border-t border-gh-border">
+            {alt || title}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Handle images (including GIFs)
+  return (
+    <div className="my-4 rounded-xl overflow-hidden border border-gh-border bg-gh-surface inline-block max-w-full">
+      <img
+        src={src}
+        alt={alt || ''}
+        title={title}
+        loading="lazy"
+        className="max-w-full h-auto max-h-[600px] object-contain"
+      />
+      {(alt || title) && (
+        <p className="px-4 py-2 text-xs text-gh-muted border-t border-gh-border">
+          {alt || title}
+        </p>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Create markdown components with rich media support
+ */
+function createMediaComponents(baseComponents: Components): Components {
+  return {
+    ...baseComponents,
+    img: ({ src, alt, title }) => (
+      <MediaImage src={src} alt={alt} title={title} />
+    ),
+  };
+}
 
 // ============================================================================
 // Mobile Components
@@ -625,18 +717,30 @@ export function MarkdownRenderer({
   className = '',
   sanitize = true,
   collapsible = false,
+  enableMedia = false,
 }: MarkdownRendererProps) {
   const components = useMemo(() => {
+    let baseComponents: Components;
     switch (variant) {
       case 'mobile':
-        return mobileMarkdownComponents;
+        baseComponents = mobileMarkdownComponents;
+        break;
       case 'message':
-        return messageMarkdownComponents;
+        baseComponents = messageMarkdownComponents;
+        break;
       case 'desktop':
       default:
-        return desktopMarkdownComponents;
+        baseComponents = desktopMarkdownComponents;
+        break;
     }
-  }, [variant]);
+    
+    // Add media components if enabled
+    if (enableMedia) {
+      return createMediaComponents(baseComponents);
+    }
+    
+    return baseComponents;
+  }, [variant, enableMedia]);
 
   // Sanitize content and normalize XML tags
   const sanitizedContent = useMemo(() => {
