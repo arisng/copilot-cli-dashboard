@@ -332,23 +332,6 @@ function collectArtifactFiles(entries: SessionArtifactEntry[]): SessionArtifactE
   });
 }
 
-function renderArtifactContent(
-  entry: SessionArtifactEntry,
-  sessionId: string,
-  forceMarkdown = false,
-  collapsible = false,
-) {
-  return (
-    <ArtifactViewer
-      entry={entry}
-      sessionId={sessionId}
-      forceMarkdown={forceMarkdown}
-      collapsible={collapsible}
-      isMobile={false}
-    />
-  );
-}
-
 function buildTodoItemsFromDb(
   todoInspection: SessionDbInspection | null,
   todoDepsInspection: SessionDbInspection | null,
@@ -506,7 +489,27 @@ function useSessionDbInspection(sessionId: string, table: string, limit: number)
 
 // ── Plan view ──────────────────────────────────────────────────────────────
 
-function PlanView({ content, isPending }: { content: string; isPending: boolean }) {
+function PlanView({ 
+  content, 
+  isPending, 
+  sessionId 
+}: { 
+  content: string; 
+  isPending: boolean;
+  sessionId: string;
+}) {
+  // Create a synthetic artifact entry for the plan content
+  const planEntry = {
+    id: 'plan',
+    name: 'plan.md',
+    path: 'plan.md',
+    kind: 'file' as const,
+    content,
+    sizeBytes: content.length,
+    createdAt: new Date().toISOString(),
+    modifiedAt: new Date().toISOString(),
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {isPending && (
@@ -517,7 +520,13 @@ function PlanView({ content, isPending }: { content: string; isPending: boolean 
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-6">
-        <MarkdownRenderer content={content} variant="desktop" collapsible />
+        <ArtifactViewer 
+          entry={planEntry} 
+          sessionId={sessionId}
+          defaultMode="preview"
+          collapsible={true}
+          isMobile={false}
+        />
       </div>
     </div>
   );
@@ -920,8 +929,15 @@ function ArtifactGroupPanel({ group, sessionId }: { group: SessionArtifactGroup;
                   </div>
                   <p className="mt-1 text-[11px] font-mono text-gh-muted">{selectedFile.path}</p>
                 </div>
-                <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4">
-                  {renderArtifactContent(selectedFile, sessionId, group.path === 'checkpoints', true)}
+                <div className="rounded-xl border border-gh-border bg-gh-bg/30 p-4 h-[600px]">
+                  <ArtifactViewer
+                    entry={selectedFile}
+                    sessionId={sessionId}
+                    defaultMode="auto"
+                    collapsible={true}
+                    isMobile={false}
+                    className="h-full"
+                  />
                 </div>
               </div>
             ) : (
@@ -2152,7 +2168,7 @@ export function SessionDetail() {
 
             {resolvedView === 'plan' && (
               session.planContent ? (
-                <PlanView content={session.planContent} isPending={session.isPlanPending} />
+                <PlanView content={session.planContent} isPending={session.isPlanPending} sessionId={session.id} />
               ) : (
                 <div className="flex-1 overflow-y-auto p-4">
                   <div className="rounded-xl border border-gh-border bg-gh-surface/30 p-4 text-sm text-gh-muted">
