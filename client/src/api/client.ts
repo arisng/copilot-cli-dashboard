@@ -252,10 +252,6 @@ export interface SessionActionResult {
   error?: string;
 }
 
-export interface PauseStatus {
-  paused: boolean;
-}
-
 export interface GCStatus {
   enabled: boolean;
   running: boolean;
@@ -343,40 +339,6 @@ export async function searchResearch(q: string): Promise<SearchResult[]> {
 // === Session Action API Functions ===
 
 const API_BASE = '/api';
-
-export async function closeSession(sessionId: string): Promise<SessionActionResult> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/close`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Failed to close session: ${res.status}`);
-  return res.json();
-}
-
-export async function retrySession(sessionId: string, toolCallId?: string): Promise<SessionActionResult> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/retry`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ toolCallId }),
-  });
-  if (!res.ok) throw new Error(`Failed to retry: ${res.status}`);
-  return res.json();
-}
-
-export async function getPauseStatus(sessionId: string): Promise<PauseStatus> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/pause`);
-  if (!res.ok) throw new Error(`Failed to get pause status: ${res.status}`);
-  return res.json();
-}
-
-export async function pauseSession(sessionId: string): Promise<SessionActionResult> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/pause`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Failed to pause: ${res.status}`);
-  return res.json();
-}
-
-export async function resumeSession(sessionId: string): Promise<SessionActionResult> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/resume`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Failed to resume: ${res.status}`);
-  return res.json();
-}
 
 export async function injectMessage(sessionId: string, content: string, role: 'user' | 'assistant' = 'user'): Promise<SessionActionResult> {
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/message`, {
