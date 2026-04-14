@@ -1,144 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-// ── Session action hooks ───────────────────────────────────────────────────
-
-function useSessionActions(sessionId: string) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const executeAction = useCallback(async (action: string, body?: object) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return await res.json();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action failed');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sessionId]);
-
-  return { executeAction, isLoading, error };
-}
-
-// ── Session action bar component ───────────────────────────────────────────
-
-function SessionActionBar({
-  session,
-  onAction,
-  isLoading,
-}: {
-  session: SessionDetailData;
-  onAction: (action: string) => void;
-  isLoading: boolean;
-}) {
-  const [showConfirm, setShowConfirm] = useState<string | null>(null);
-
-  const actions = [
-    { id: 'pause', label: 'Pause', icon: '⏸', show: session.isOpen && !session.isAborted },
-    { id: 'resume', label: 'Resume', icon: '▶', show: session.isOpen },
-    { id: 'retry', label: 'Retry', icon: '🔄', show: session.isAborted || session.needsAttention },
-    { id: 'close', label: 'Force Close', icon: '⏹', show: session.isOpen, danger: true },
-  ];
-
-  const handleAction = (actionId: string) => {
-    if (actionId === 'close') {
-      setShowConfirm('close');
-      return;
-    }
-    onAction(actionId);
-  };
-
-  return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-gh-border bg-gh-surface/30">
-      {actions
-        .filter((a) => a.show)
-        .map((action) => (
-          <button
-            key={action.id}
-            onClick={() => handleAction(action.id)}
-            disabled={isLoading}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-              action.danger
-                ? 'text-gh-attention hover:bg-gh-attention/10 border border-gh-attention/30'
-                : 'text-gh-text hover:bg-gh-surface border border-gh-border'
-            }`}
-          >
-            <span>{action.icon}</span>
-            <span>{action.label}</span>
-          </button>
-        ))}
-
-      {isLoading && (
-        <span className="text-xs text-gh-muted ml-2">
-          <span className="inline-block w-3 h-3 border-2 border-gh-border border-t-gh-accent rounded-full animate-spin mr-1" />
-          Processing...
-        </span>
-      )}
-
-      {showConfirm === 'close' && (
-        <div className="flex items-center gap-2 ml-4">
-          <span className="text-xs text-gh-attention">Confirm force close?</span>
-          <button
-            onClick={() => {
-              onAction('close');
-              setShowConfirm(null);
-            }}
-            className="px-2 py-1 text-xs bg-gh-attention text-white rounded"
-          >
-            Yes
-          </button>
-          <button
-            onClick={() => setShowConfirm(null)}
-            className="px-2 py-1 text-xs border border-gh-border rounded"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Toast notification component ───────────────────────────────────────────
-
-function Toast({
-  message,
-  type,
-  onClose,
-}: {
-  message: string;
-  type: 'success' | 'error';
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  return (
-    <div
-      className={`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
-        type === 'success'
-          ? 'bg-gh-active text-white'
-          : 'bg-gh-attention text-white'
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <span>{type === 'success' ? '✓' : '✗'}</span>
-        <span>{message}</span>
-      </div>
-    </div>
-  );
-}
 import { useSession } from '../../hooks/useSession.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import {
@@ -1910,11 +1772,9 @@ const SIDEBAR_PAGE_SIZE = 10;
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
-  const { session, loading, error, refetch } = useSession(id ?? '');
+  const { session, loading, error } = useSession(id ?? '');
   const { sessions } = useSessions();
-  const { executeAction, isLoading: isActionLoading } = useSessionActions(id ?? '');
   const [activeView, setActiveView] = useState<SessionDetailView>('main');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [selectedThreadId, setSelectedThreadId] = useState('');
   const [selectedDbTable, setSelectedDbTable] = useState('');
   const [dbViewMode, setDbViewMode] = useState<SessionDbViewMode>('graph');
@@ -2118,18 +1978,6 @@ export function SessionDetail() {
     setActiveView('session-db');
   }
 
-  async function handleAction(action: string) {
-    try {
-      await executeAction(action);
-      setToast({ message: `Session ${action}ed successfully`, type: 'success' });
-      // Refetch to get updated session state
-      refetch();
-    } catch {
-      // Error is already handled in the hook, but we show a toast
-      setToast({ message: `Failed to ${action} session`, type: 'error' });
-    }
-  }
-
   return (
     <div className={detailGridClassName}>
       <section className={`flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl border border-gh-border bg-gh-surface/20 p-4 ${isWorkflowFullScreen ? 'hidden' : ''}`}>
@@ -2147,8 +1995,6 @@ export function SessionDetail() {
           showSessionSidebar={showSessionSidebar}
           onToggleSessionSidebar={() => setShowSessionSidebar((previous) => !previous)}
         />
-
-        <SessionActionBar session={session} onAction={handleAction} isLoading={isActionLoading} />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 xl:flex-row" role="region" aria-labelledby="session-detail-panel-heading">
           <aside className={`min-h-0 overflow-y-auto rounded-xl border border-gh-border bg-gh-surface/20 p-3 xl:w-[18rem] xl:flex-shrink-0 ${isWorkflowFullScreen ? 'hidden' : ''}`}>
@@ -2386,7 +2232,6 @@ export function SessionDetail() {
         <SessionSidebar currentId={id ?? ''} currentProjectPath={session.projectPath} sessions={sessions} />
       </div>
 
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }
