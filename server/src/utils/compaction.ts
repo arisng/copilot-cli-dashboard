@@ -129,9 +129,10 @@ function isRemovableEvent(event: CompactionEvent, options: CompactionOptions): b
     return false;
   }
 
-  // Can remove redundant assistant.turn_end if followed by turn_start
+  // assistant.turn_end is required for working/idle status derivation and
+  // assistant-turn usage estimates, so it must never be compacted away.
   if (event.type === 'assistant.turn_end') {
-    return true;
+    return false;
   }
 
   // Can remove intermediate assistant messages that only contain reasoning
