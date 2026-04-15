@@ -58,7 +58,7 @@ export const DEFAULT_SESSION_BROWSE_STATE: SessionBrowseState = {
   projectPath: null,
   branch: null,
   status: null,
-  showUnknownContext: false,
+  showUnknownContext: true,
   sortField: 'last_activity',
   sortOrder: 'desc',
   page: 1,
