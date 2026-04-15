@@ -24,6 +24,7 @@ export interface SessionBrowseState {
   sortOrder: SessionBrowseSortOrder;
   page: number;
   pageSize: number;
+  query: string;
 }
 
 export interface SessionBrowseResult {
@@ -63,6 +64,7 @@ export const DEFAULT_SESSION_BROWSE_STATE: SessionBrowseState = {
   sortOrder: 'desc',
   page: 1,
   pageSize: 25,
+  query: '',
 };
 
 function normalizePathSeparators(value: string): string {
@@ -225,9 +227,10 @@ export function isUnknownContext(session: SessionSummary): boolean {
 
 export function filterSessionsForBrowse(sessions: SessionSummary[], state: Pick<
   SessionBrowseState,
-  'projectPath' | 'branch' | 'status' | 'showUnknownContext'
+  'projectPath' | 'branch' | 'status' | 'showUnknownContext' | 'query'
 >): SessionSummary[] {
   const selectedBranch = state.projectPath ? state.branch : null;
+  const query = state.query?.trim().toLowerCase() ?? '';
 
   return sessions.filter((session) => {
     if (!matchesProject(session, state.projectPath)) {
@@ -245,6 +248,14 @@ export function filterSessionsForBrowse(sessions: SessionSummary[], state: Pick<
     // Filter out Unknown context sessions by default
     if (!state.showUnknownContext && isUnknownContext(session)) {
       return false;
+    }
+
+    if (query) {
+      const matchesId = session.id.toLowerCase().includes(query);
+      const matchesTitle = session.title.toLowerCase().includes(query);
+      if (!matchesId && !matchesTitle) {
+        return false;
+      }
     }
 
     return true;
@@ -328,6 +339,7 @@ export function browseSessions(sessions: SessionSummary[], state: SessionBrowseS
     branch: selectedBranch,
     status: selectedStatus,
     showUnknownContext,
+    query: state.query ?? '',
   });
   const sortedSessions = sortSessionsForBrowse(filteredSessions, state.sortField, state.sortOrder);
   const pagination = paginateSessionsForBrowse(sortedSessions, state.page, state.pageSize);
@@ -357,6 +369,7 @@ export function useSessionBrowse(sessions: SessionSummary[], state: SessionBrows
       state.pageSize,
       state.projectPath,
       state.showUnknownContext,
+      state.query,
       state.sortField,
       state.sortOrder,
       state.status,

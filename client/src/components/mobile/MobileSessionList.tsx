@@ -527,8 +527,9 @@ export function MobileSessionList() {
         branch: browse.branch,
         status: null,
         showUnknownContext: browseState.showUnknownContext,
+        query: browseState.query ?? '',
       }),
-    [browse.branch, browse.projectPath, browseState.showUnknownContext, openSessions],
+    [browse.branch, browse.projectPath, browseState.showUnknownContext, browseState.query, openSessions],
   );
 
   const statusCounts = useMemo(() => {
