@@ -1418,15 +1418,19 @@ function isRootThreadEvent(event: RawEvent): boolean {
   return getParentToolCallId(event) === undefined;
 }
 
-function createStubSessionSummary(sessionId: string, now = new Date().toISOString()): SessionSummary {
+function createStubSessionSummary(sessionId: string, sessionDir?: string, now = new Date().toISOString()): SessionSummary {
+  const workspace = sessionDir ? readWorkspaceYaml(sessionDir) : null;
+  const projectPath = workspace?.cwd ?? 'Unknown';
+  const gitBranch = workspace?.branch ?? null;
+  const title = workspace?.summary ?? 'New';
   return {
     id: sessionId,
-    title: 'New',
-    summary: null,
-    projectPath: 'Unknown',
-    gitBranch: null,
-    startedAt: now,
-    lastActivityAt: now,
+    title,
+    summary: workspace?.summary ?? null,
+    projectPath,
+    gitBranch,
+    startedAt: workspace?.created_at ?? now,
+    lastActivityAt: workspace?.updated_at ?? now,
     durationMs: 0,
     isOpen: true,
     needsAttention: false,
@@ -1691,7 +1695,7 @@ function parseSessionSummaryAtPath(sessionDir: string, sessionId: string): Sessi
   const scan = fs.existsSync(eventsFile) ? scanSessionSummary(eventsFile) : null;
 
   if (!scan || scan.eventCount === 0 || !scan.startData || !scan.startedAt) {
-    const summary = isOpen ? createStubSessionSummary(sessionId) : null;
+    const summary = isOpen ? createStubSessionSummary(sessionId, sessionDir) : null;
     sessionSummaryCache.set(sessionDir, { signature, summary });
     return summary;
   }
@@ -1716,8 +1720,8 @@ function parseSessionSummaryAtPath(sessionDir: string, sessionId: string): Sessi
     id: sessionId,
     title: sessionSummary ?? titleFromContent(scan.firstUserContent),
     summary: sessionSummary,
-    projectPath: sessionContext?.cwd ?? 'Unknown',
-    gitBranch: sessionContext?.branch ?? null,
+    projectPath: sessionContext?.cwd || workspace?.cwd || 'Unknown',
+    gitBranch: sessionContext?.branch || workspace?.branch || null,
     startedAt: scan.startedAt,
     lastActivityAt,
     durationMs: Date.parse(lastActivityAt) - Date.parse(scan.startedAt),
@@ -1762,7 +1766,7 @@ function parseSessionDirAtPath(sessionDir: string, sessionId: string): SessionDe
   // Brand-new session: lock file exists but events not yet written — show as
   // a placeholder so it appears immediately in the list.
   if (events.length === 0 || !startEvent) {
-    return isOpen ? createStubSessionDetail(sessionId) : null;
+    return isOpen ? { ...createStubSessionSummary(sessionId, sessionDir), messages: [], subAgentMessages: {} } : null;
   }
 
   const startData = startEvent.data as unknown as SessionStartData;
@@ -1798,8 +1802,8 @@ function parseSessionDirAtPath(sessionDir: string, sessionId: string): SessionDe
     id: sessionId,
     title: sessionSummary ?? extractTitle(messages),
     summary: sessionSummary,
-    projectPath: sessionContext?.cwd ?? 'Unknown',
-    gitBranch: sessionContext?.branch ?? null,
+    projectPath: sessionContext?.cwd || workspace?.cwd || 'Unknown',
+    gitBranch: sessionContext?.branch || workspace?.branch || null,
     startedAt,
     lastActivityAt,
     durationMs: Date.parse(lastActivityAt) - Date.parse(startedAt),
@@ -1849,15 +1853,17 @@ function convertCatalogSessionToSummary(catalogSession: CatalogSession): Session
   }
 
   // Fallback: build summary from catalog data with defaults for dynamic fields
+  // Prefer workspace.yaml when catalog fields are empty
+  const workspace = sessionDir ? readWorkspaceYaml(sessionDir) : null;
   const now = new Date().toISOString();
   return {
     id: catalogSession.id,
-    title: catalogSession.summary || 'Untitled session',
-    summary: catalogSession.summary,
-    projectPath: catalogSession.cwd || 'Unknown',
-    gitBranch: catalogSession.branch,
-    startedAt: catalogSession.created_at || now,
-    lastActivityAt: catalogSession.updated_at || now,
+    title: catalogSession.summary || workspace?.summary || 'Untitled session',
+    summary: catalogSession.summary || workspace?.summary || null,
+    projectPath: catalogSession.cwd || workspace?.cwd || 'Unknown',
+    gitBranch: catalogSession.branch || workspace?.branch || null,
+    startedAt: catalogSession.created_at || workspace?.created_at || now,
+    lastActivityAt: catalogSession.updated_at || workspace?.updated_at || now,
     durationMs: 0,
     isOpen,
     needsAttention: false,
