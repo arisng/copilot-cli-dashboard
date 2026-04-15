@@ -484,8 +484,9 @@ The mobile routes (`/m/*`) require JavaScript to render. Ensure the client bundl
 ## Documentation References
 
 - `README.md` — User-facing documentation and quick start
-- `docs/client.md` — Detailed client architecture
-- `docs/server.md` — Detailed server architecture
-- `docs/session-model.md` — Session data format specification
-- `docs/remote-access.md` — Remote access guide (Cloudflare, Tailscale, Dev Tunnels)
-- `docs/devtunnel.md` — Dev Tunnels fallback documentation
+- `.docs/reference/client/client-architecture.md` — Detailed client architecture
+- `.docs/reference/server/server-architecture.md` — Detailed server architecture
+- `.docs/reference/session-state/session-data-model.md` — Session data format specification
+- `.docs/how-to/operations/remote-access.md` — Remote access guide (Cloudflare, Tailscale, Dev Tunnels)
+- `.docs/how-to/operations/devtunnel.md` — Dev Tunnels fallback documentation
+- `.docs/index.md` — Full documentation index (Diátaxis)
