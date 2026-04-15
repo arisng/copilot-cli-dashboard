@@ -65,17 +65,12 @@ export function SessionList() {
     localStorage.setItem('sessionViewMode', mode);
   }
 
-  const hasQuery = browseState.query.trim().length > 0;
-  const sessionsToBrowse = hasQuery ? sessions : sessions.filter((session) => session.isOpen);
+  const sessionsToBrowse = sessions;
   const browse = useSessionBrowse(sessionsToBrowse, browseState);
   const shownAttentionCount = browse.filteredSessions.filter((session) => session.needsAttention || session.lastError).length;
-  const countLabel = hasQuery
-    ? browse.totalItems === sessionsToBrowse.length
-      ? `${browse.totalItems} session${browse.totalItems !== 1 ? 's' : ''}`
-      : `${browse.totalItems} of ${sessionsToBrowse.length} sessions`
-    : browse.totalItems === sessionsToBrowse.length
-      ? `${browse.totalItems} open session${browse.totalItems !== 1 ? 's' : ''}`
-      : `${browse.totalItems} of ${sessionsToBrowse.length} open sessions`;
+  const countLabel = browse.totalItems === sessionsToBrowse.length
+    ? `${browse.totalItems} session${browse.totalItems !== 1 ? 's' : ''}`
+    : `${browse.totalItems} of ${sessionsToBrowse.length} sessions`;
 
   function handleProjectChange(value: string) {
     setBrowseState((previous) => ({
@@ -349,27 +344,17 @@ export function SessionList() {
         {!loading && sessionsToBrowse.length === 0 && !error && (
           <div className="rounded-lg border border-gh-border bg-gh-surface p-8 text-center">
             <p className="text-gh-muted text-sm">
-              {sessions.length === 0
-                ? 'No sessions found in the detected Copilot session-state directories.'
-                : hasQuery
-                  ? 'No sessions match your search.'
-                  : 'No open sessions right now.'}
+              No sessions found in the detected Copilot session-state directories.
             </p>
             <p className="text-gh-muted text-xs mt-2">
-              {sessions.length === 0
-                ? 'Start a Copilot CLI session and it will appear here automatically.'
-                : hasQuery
-                  ? 'Try a different ID or title.'
-                  : 'Start or resume a session and it will appear here automatically.'}
+              Start a Copilot CLI session and it will appear here automatically.
             </p>
           </div>
         )}
 
         {sessionsToBrowse.length > 0 && browse.totalItems === 0 && !error && (
           <div className="rounded-lg border border-gh-border bg-gh-surface p-8 text-center">
-            <p className="text-gh-muted text-sm">
-              {hasQuery ? 'No sessions match the current search and filters.' : 'No open sessions match the current filters.'}
-            </p>
+            <p className="text-gh-muted text-sm">No sessions match the current filters.</p>
             <button
               type="button"
               onClick={resetBrowse}

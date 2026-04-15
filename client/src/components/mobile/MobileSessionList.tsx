@@ -479,12 +479,7 @@ export function MobileSessionList() {
     pageSize: MOBILE_PAGE_SIZE,
   }));
 
-  const openSessions = useMemo(
-    () => sessions.filter((session) => session.isOpen),
-    [sessions],
-  );
-
-  const browse = useSessionBrowse(openSessions, browseState);
+  const browse = useSessionBrowse(sessions, browseState);
 
   const filteredSessionModels = useMemo(() => {
     const now = Date.now();
@@ -522,14 +517,14 @@ export function MobileSessionList() {
 
   const statusScopeSessions = useMemo(
     () =>
-      filterSessionsForBrowse(openSessions, {
+      filterSessionsForBrowse(sessions, {
         projectPath: browse.projectPath,
         branch: browse.branch,
         status: null,
         showUnknownContext: browseState.showUnknownContext,
         query: browseState.query ?? '',
       }),
-    [browse.branch, browse.projectPath, browseState.showUnknownContext, browseState.query, openSessions],
+    [browse.branch, browse.projectPath, browseState.showUnknownContext, browseState.query, sessions],
   );
 
   const statusCounts = useMemo(() => {
@@ -789,7 +784,7 @@ export function MobileSessionList() {
         </div>
       </div>
 
-      {loading && openSessions.length === 0 && <LoadingSpinner />}
+      {loading && sessions.length === 0 && <LoadingSpinner />}
 
       {error && (
         <div className="rounded-2xl border border-gh-attention/30 bg-gh-attention/10 p-4 text-sm text-gh-attention">
@@ -797,16 +792,16 @@ export function MobileSessionList() {
         </div>
       )}
 
-      {!loading && openSessions.length === 0 && !error && (
+      {!loading && sessions.length === 0 && !error && (
         <div className="rounded-2xl border border-gh-border bg-gh-surface p-6 text-center">
-          <p className="text-sm text-gh-text">No active sessions yet.</p>
+          <p className="text-sm text-gh-text">No sessions yet.</p>
           <p className="mt-2 text-xs text-gh-muted">
             Start a Copilot CLI session and it will appear here automatically.
           </p>
         </div>
       )}
 
-      {openSessions.length > 0 && (
+      {sessions.length > 0 && (
         browse.totalItems > 0 ? (
           <div className="space-y-5">
             {visibleSections.map((section) => (
