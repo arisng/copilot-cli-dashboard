@@ -26,6 +26,13 @@ export type SessionUsageMetricSource =
   | 'assistant_turn_estimate'
   | 'shutdown_plus_assistant_turn_estimate';
 
+export interface SessionEventError {
+  type: string;
+  message: string;
+  timestamp: string;
+  statusCode?: number;
+}
+
 export interface SessionSummary {
   id: string;
   title: string;
@@ -50,6 +57,7 @@ export interface SessionSummary {
   totalPremiumRequestsEstimate: number;
   totalPremiumRequestsSource: SessionUsageMetricSource;
   currentMode: string;
+  lastError?: SessionEventError | null;
   activeSubAgents: ActiveSubAgent[];
   hasPlan: boolean;
   isPlanPending: boolean;

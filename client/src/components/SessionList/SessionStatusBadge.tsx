@@ -1,5 +1,6 @@
 import type { SessionSummary } from '../../api/client.ts';
 import { AttentionBadge } from './AttentionBadge.tsx';
+import { getSessionErrorLabel } from '../../utils/sessionError.ts';
 
 interface SessionStatusBadgeProps {
   session: SessionSummary;
@@ -31,6 +32,15 @@ export function SessionStatusBadge({
       <span className={`inline-flex items-center gap-1.5 border border-gh-attention/25 bg-gh-attention/10 font-medium text-gh-attention ${sizeClassName} ${className}`}>
         <span className={`h-1.5 w-1.5 rounded-full bg-gh-attention ${pulse ? 'animate-pulse' : ''}`} />
         Plan review
+      </span>
+    );
+  }
+
+  if (session.lastError) {
+    return (
+      <span className={`inline-flex items-center gap-1.5 border border-gh-warning/25 bg-gh-warning/10 font-medium text-gh-warning ${sizeClassName} ${className}`}>
+        <span className={`h-1.5 w-1.5 rounded-full bg-gh-warning ${pulse ? 'animate-pulse' : ''}`} />
+        {getSessionErrorLabel(session.lastError)}
       </span>
     );
   }

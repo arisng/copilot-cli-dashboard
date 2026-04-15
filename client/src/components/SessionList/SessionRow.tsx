@@ -137,7 +137,11 @@ export function SessionRow({ session, selected = false, onSelectToggle }: Props)
           group cursor-pointer border-b border-gh-border align-top transition-colors
           hover:bg-gh-surface/60 focus-visible:bg-gh-surface/70
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gh-accent/40
-          ${session.needsAttention ? 'border-l-2 border-l-gh-attention bg-gh-attention/5' : ''}
+          ${session.needsAttention
+            ? 'border-l-2 border-l-gh-attention bg-gh-attention/5'
+            : session.lastError
+            ? 'border-l-2 border-l-gh-warning bg-gh-warning/5'
+            : ''}
         `}
       >
         <td className="px-2 py-2.5 align-middle">

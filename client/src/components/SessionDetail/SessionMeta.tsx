@@ -6,6 +6,7 @@ import { getProjectLabel } from '../../hooks/useSessionBrowse.ts';
 import { AttentionBadge } from '../SessionList/AttentionBadge.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
+import { getSessionErrorDescription, getSessionErrorLabel } from '../../utils/sessionError.ts';
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -79,6 +80,14 @@ function getSessionCallout(session: SessionDetail, todoCount: number, activeAgen
     };
   }
 
+  if (session.lastError) {
+    return {
+      title: getSessionErrorLabel(session.lastError),
+      description: getSessionErrorDescription(session.lastError),
+      toneClass: 'border-gh-warning/30 bg-gh-warning/10 text-gh-warning',
+    };
+  }
+
   if (session.isWorking) {
     return {
       title: 'Actively working',
@@ -141,25 +150,31 @@ function SessionStatusBadges({ session }: { session: SessionDetail }) {
   return (
     <>
       {session.needsAttention && <AttentionBadge />}
+      {session.lastError && !session.needsAttention && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-gh-warning/20 bg-gh-warning/10 px-2 py-1 text-xs font-medium text-gh-warning">
+          <span className="h-1.5 w-1.5 rounded-full bg-gh-warning" />
+          {getSessionErrorLabel(session.lastError)}
+        </span>
+      )}
       {session.isAborted && !session.needsAttention && (
         <span className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-300">
           <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
           Aborted by user
         </span>
       )}
-      {session.isTaskComplete && !session.needsAttention && (
+      {session.isTaskComplete && !session.needsAttention && !session.lastError && (
         <span className="inline-flex items-center gap-1 rounded-full border border-gh-active/20 bg-gh-active/10 px-2 py-1 text-xs font-medium text-gh-active">
           <span className="h-1.5 w-1.5 rounded-full bg-gh-active" />
           Task complete
         </span>
       )}
-      {session.isWorking && !session.needsAttention && (
+      {session.isWorking && !session.needsAttention && !session.lastError && (
         <span className="inline-flex items-center gap-1 rounded-full border border-gh-active/20 bg-gh-active/10 px-2 py-1 text-xs font-medium text-gh-active">
           <span className="h-1.5 w-1.5 rounded-full bg-gh-active animate-pulse" />
           Working
         </span>
       )}
-      {session.isIdle && !session.needsAttention && (
+      {session.isIdle && !session.needsAttention && !session.lastError && (
         <span className="inline-flex items-center gap-1 rounded-full border border-gh-border bg-gh-bg/70 px-2 py-1 text-xs font-medium text-gh-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-gh-muted" />
           Idle

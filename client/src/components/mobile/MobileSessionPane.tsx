@@ -13,6 +13,7 @@ import { ModeBadge } from '../shared/modeBadge.tsx';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { MobileInfoCard } from './MobileInfoCard.tsx';
 import { getMobileSessionState } from './mobileSessionState.ts';
+import { getSessionErrorDescription, getSessionErrorLabel } from '../../utils/sessionError.ts';
 import {
   MOBILE_MESSAGE_SNIPPET_MAX_LENGTH,
   getMessageSnippet,
@@ -138,6 +139,14 @@ function getSessionCallout(session: SessionDetail, todoCount: number, activeAgen
       title: 'Plan ready for review',
       description: 'Open the work section to review the captured plan and decide how the session should proceed.',
       toneClass: 'border-gh-attention/30 bg-gh-attention/10 text-gh-attention',
+    };
+  }
+
+  if (session.lastError) {
+    return {
+      title: getSessionErrorLabel(session.lastError),
+      description: getSessionErrorDescription(session.lastError),
+      toneClass: 'border-gh-warning/30 bg-gh-warning/10 text-gh-warning',
     };
   }
 
@@ -1278,6 +1287,7 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
 
   const getStateAccentColor = () => {
     if (session.needsAttention) return 'bg-gh-attention';
+    if (session.lastError) return 'bg-gh-warning';
     if (session.isWorking) return 'bg-gh-active';
     if (session.isTaskComplete) return 'bg-emerald-400';
     if (session.isAborted) return 'bg-red-400';
@@ -1286,6 +1296,7 @@ function StickySummaryBar({ session, activeSection, onSectionChange, showBackLin
 
   const getStateBgColor = () => {
     if (session.needsAttention) return 'bg-gh-attention/10 border-gh-attention/30';
+    if (session.lastError) return 'bg-gh-warning/10 border-gh-warning/30';
     if (session.isWorking) return 'bg-gh-active/10 border-gh-active/30';
     if (session.isTaskComplete) return 'bg-emerald-400/10 border-emerald-400/30';
     if (session.isAborted) return 'bg-red-400/10 border-red-400/30';

@@ -1,8 +1,9 @@
 import type { SessionSummary } from '../../api/client.ts';
+import { getSessionErrorLabel } from '../../utils/sessionError.ts';
 
 type SessionStateSource = Pick<
   SessionSummary,
-  'needsAttention' | 'isWorking' | 'isIdle' | 'isTaskComplete' | 'isAborted' | 'isOpen'
+  'needsAttention' | 'lastError' | 'isWorking' | 'isIdle' | 'isTaskComplete' | 'isAborted' | 'isOpen'
 >;
 
 interface MobileSessionState {
@@ -15,6 +16,13 @@ export function getMobileSessionState(session: SessionStateSource): MobileSessio
     return {
       label: 'Needs attention',
       className: 'border-gh-attention/40 bg-gh-attention/10 text-gh-attention',
+    };
+  }
+
+  if (session.lastError) {
+    return {
+      label: getSessionErrorLabel(session.lastError),
+      className: 'border-gh-warning/40 bg-gh-warning/10 text-gh-warning',
     };
   }
 

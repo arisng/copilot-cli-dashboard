@@ -53,6 +53,7 @@ import { MessageFilterBar } from '../shared/MessageFilterBar.tsx';
 import { ImagePreview } from './ImagePreview.tsx';
 import { fetchSessionArtifacts, fetchSessionDb } from '../../api/client.ts';
 import { sortTodosLatestFirst } from '../../utils/todoSort.ts';
+import { getSessionErrorLabel } from '../../utils/sessionError.ts';
 
 // ── Shared markdown renderer imported from ../shared/MarkdownRenderer ─────
 
@@ -634,7 +635,13 @@ function DetailPanelHeader({
   };
 
   const badgeTextByView: Partial<Record<SessionDetailView, string>> = {
-    main: session.isWorking ? 'Live' : session.isOpen ? 'Open' : 'Closed',
+    main: session.lastError
+      ? getSessionErrorLabel(session.lastError)
+      : session.isWorking
+        ? 'Live'
+        : session.isOpen
+          ? 'Open'
+          : 'Closed',
     plan: session.isPlanPending ? 'Needs review' : 'Captured',
     todos: todos.length > 0 ? `${completedTodos}/${todos.length} done` : undefined,
     threads: activeThread ? (activeThread.isCompleted ? 'Done' : 'Running') : undefined,
@@ -650,9 +657,11 @@ function DetailPanelHeader({
   };
 
   const badgeClassByView: Partial<Record<SessionDetailView, string>> = {
-    main: session.isWorking
-      ? 'border-gh-active/30 bg-gh-active/10 text-gh-active'
-      : 'border-gh-border bg-gh-bg/70 text-gh-muted',
+    main: session.lastError
+      ? 'border-gh-warning/30 bg-gh-warning/10 text-gh-warning'
+      : session.isWorking
+        ? 'border-gh-active/30 bg-gh-active/10 text-gh-active'
+        : 'border-gh-border bg-gh-bg/70 text-gh-muted',
     plan: session.isPlanPending
       ? 'border-gh-attention/30 bg-gh-attention/10 text-gh-attention'
       : 'border-gh-border bg-gh-bg/70 text-gh-muted',
@@ -1532,6 +1541,7 @@ const SIDEBAR_PAGE_SIZE = 10;
 
   function statusDot(s: SessionSummary) {
     if (s.needsAttention) return 'bg-gh-attention animate-pulse';
+    if (s.lastError)      return 'bg-gh-warning animate-pulse';
     if (s.isWorking)      return 'bg-gh-active animate-pulse';
     if (s.isTaskComplete) return 'bg-gh-active';
     if (s.isAborted)      return 'bg-red-500';

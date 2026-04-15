@@ -58,7 +58,7 @@ export function SessionList() {
 
   const activeSessions = sessions.filter((session) => session.isOpen);
   const browse = useSessionBrowse(activeSessions, browseState);
-  const shownAttentionCount = browse.filteredSessions.filter((session) => session.needsAttention).length;
+  const shownAttentionCount = browse.filteredSessions.filter((session) => session.needsAttention || session.lastError).length;
   const countLabel = browse.totalItems === activeSessions.length
     ? `${browse.totalItems} open session${browse.totalItems !== 1 ? 's' : ''}`
     : `${browse.totalItems} of ${activeSessions.length} open sessions`;

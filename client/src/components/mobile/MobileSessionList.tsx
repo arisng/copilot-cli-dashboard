@@ -23,6 +23,7 @@ import {
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
+import { getSessionErrorLabel } from '../../utils/sessionError.ts';
 import { MobileInfoCard } from './MobileInfoCard.tsx';
 import { getMobileSessionState } from './mobileSessionState.ts';
 
@@ -242,7 +243,7 @@ function getLatestPreview(session: SessionSummary): MessagePreview | undefined {
 }
 
 function isPrioritySession(session: SessionSummary): boolean {
-  return session.needsAttention || session.isPlanPending || session.isTaskComplete || session.isAborted;
+  return session.needsAttention || Boolean(session.lastError) || session.isPlanPending || session.isTaskComplete || session.isAborted;
 }
 
 function getActivityTime(lastActivityAt: string): number {
@@ -263,6 +264,10 @@ function getSessionSignals(session: SessionSummary, activeAgentCount: number): S
 
   if (session.isPlanPending) {
     signals.push({ label: 'Plan review', tone: 'attention' });
+  }
+
+  if (session.lastError) {
+    signals.push({ label: getSessionErrorLabel(session.lastError), tone: 'attention' });
   }
 
   if (activeAgentCount > 0) {
@@ -349,6 +354,8 @@ function SessionPreviewCard({ item }: { item: SessionCardModel }) {
   
   const cardClassName = session.needsAttention || session.isPlanPending
     ? 'border-gh-attention/40 bg-gh-attention/5 hover:border-gh-attention/60'
+    : session.lastError
+      ? 'border-gh-warning/40 bg-gh-warning/5 hover:border-gh-warning/60'
     : session.isTaskComplete
       ? 'border-emerald-400/30 bg-emerald-400/5 hover:border-emerald-400/45'
       : session.isWorking || activeAgentCount > 0
@@ -508,7 +515,7 @@ export function MobileSessionList() {
   const workingSessions = filteredSections[1]?.sessions ?? [];
   const quietSessions = filteredSections[2]?.sessions ?? [];
 
-  const attentionCount = filteredSessionModels.filter((item) => item.session.needsAttention).length;
+  const attentionCount = filteredSessionModels.filter((item) => item.session.needsAttention || item.session.lastError).length;
   const planPendingCount = filteredSessionModels.filter((item) => item.session.isPlanPending).length;
   const completedCount = filteredSessionModels.filter((item) => item.session.isTaskComplete).length;
   const activeAgentTotal = filteredSessionModels.reduce((total, item) => total + item.activeAgentCount, 0);

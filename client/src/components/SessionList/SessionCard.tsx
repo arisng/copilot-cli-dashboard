@@ -140,7 +140,7 @@ export function SessionCard({ session, selected = false, onSelectToggle }: Props
   const previews = session.previewMessages ?? [];
   const lastMessage = previews[previews.length - 1];
   const activeAgents = session.activeSubAgents.filter((a) => !a.isCompleted);
-  const showPreview = Boolean(lastMessage) && (session.needsAttention || session.isWorking || session.isPlanPending || activeAgents.length > 0);
+  const showPreview = Boolean(lastMessage) && (session.needsAttention || session.lastError || session.isWorking || session.isPlanPending || activeAgents.length > 0);
 
   function openSession() {
     navigate(`/sessions/${session.id}`);
@@ -166,6 +166,8 @@ export function SessionCard({ session, selected = false, onSelectToggle }: Props
         focus-visible:bg-gh-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-gh-bg
         ${session.needsAttention
           ? 'border border-gh-attention/60 hover:border-gh-attention/80'
+          : session.lastError
+          ? 'border border-gh-warning/50 hover:border-gh-warning/70'
           : session.isWorking
           ? 'border border-gh-active/50 hover:border-gh-active/70'
           : 'border border-gh-border hover:border-gh-border/80 hover:bg-gh-surface/80'

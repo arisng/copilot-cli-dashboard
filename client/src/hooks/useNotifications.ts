@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SessionSummary } from '../api/client.ts';
+import { getSessionErrorLabel } from '../utils/sessionError.ts';
 
 type Permission = NotificationPermission | 'unavailable';
 
@@ -105,6 +106,11 @@ export function useSessionNotifications(
               onUnavailable?.();
               break;
             }
+          } else if (session.lastError) {
+            if (!notify(getSessionErrorLabel(session.lastError), session.title, `error-${session.id}`)) {
+              onUnavailable?.();
+              break;
+            }
           } else if (session.isTaskComplete) {
             if (!notify('Task complete', session.title, `done-${session.id}`)) {
               onUnavailable?.();
@@ -114,6 +120,11 @@ export function useSessionNotifications(
         } else {
           if (!old.needsAttention && session.needsAttention) {
             if (!notify('Needs your attention', session.title, `attention-${session.id}`)) {
+              onUnavailable?.();
+              break;
+            }
+          } else if (!old.lastError && session.lastError) {
+            if (!notify(getSessionErrorLabel(session.lastError), session.title, `error-${session.id}`)) {
               onUnavailable?.();
               break;
             }

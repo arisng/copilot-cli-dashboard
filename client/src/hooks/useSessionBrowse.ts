@@ -185,6 +185,10 @@ export function getSessionBrowseStatus(session: SessionSummary): SessionBrowseSt
     return 'Needs attention';
   }
 
+  if (session.lastError) {
+    return 'Needs attention';
+  }
+
   if (session.isWorking) {
     return 'Working';
   }
