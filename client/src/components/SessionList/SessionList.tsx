@@ -65,12 +65,17 @@ export function SessionList() {
     localStorage.setItem('sessionViewMode', mode);
   }
 
-  const activeSessions = sessions.filter((session) => session.isOpen);
-  const browse = useSessionBrowse(activeSessions, browseState);
+  const hasQuery = browseState.query.trim().length > 0;
+  const sessionsToBrowse = hasQuery ? sessions : sessions.filter((session) => session.isOpen);
+  const browse = useSessionBrowse(sessionsToBrowse, browseState);
   const shownAttentionCount = browse.filteredSessions.filter((session) => session.needsAttention || session.lastError).length;
-  const countLabel = browse.totalItems === activeSessions.length
-    ? `${browse.totalItems} open session${browse.totalItems !== 1 ? 's' : ''}`
-    : `${browse.totalItems} of ${activeSessions.length} open sessions`;
+  const countLabel = hasQuery
+    ? browse.totalItems === sessionsToBrowse.length
+      ? `${browse.totalItems} session${browse.totalItems !== 1 ? 's' : ''}`
+      : `${browse.totalItems} of ${sessionsToBrowse.length} sessions`
+    : browse.totalItems === sessionsToBrowse.length
+      ? `${browse.totalItems} open session${browse.totalItems !== 1 ? 's' : ''}`
+      : `${browse.totalItems} of ${sessionsToBrowse.length} open sessions`;
 
   function handleProjectChange(value: string) {
     setBrowseState((previous) => ({
@@ -254,7 +259,7 @@ export function SessionList() {
           )}
         </div>
 
-        {activeSessions.length > 0 && (
+        {sessionsToBrowse.length > 0 && (
           <div className="mb-4 rounded-lg border border-gh-border bg-gh-surface/30 p-3">
             <div className="flex flex-wrap items-end gap-2">
               <div className="flex min-w-0 flex-col gap-1">
@@ -333,7 +338,7 @@ export function SessionList() {
           </div>
         )}
 
-        {loading && activeSessions.length === 0 && <LoadingSpinner />}
+        {loading && sessionsToBrowse.length === 0 && <LoadingSpinner />}
 
         {error && (
           <div className="rounded-lg border border-gh-attention/30 bg-gh-attention/10 p-4 text-gh-attention text-sm">
@@ -341,24 +346,30 @@ export function SessionList() {
           </div>
         )}
 
-        {!loading && activeSessions.length === 0 && !error && (
+        {!loading && sessionsToBrowse.length === 0 && !error && (
           <div className="rounded-lg border border-gh-border bg-gh-surface p-8 text-center">
             <p className="text-gh-muted text-sm">
               {sessions.length === 0
                 ? 'No sessions found in the detected Copilot session-state directories.'
-                : 'No open sessions right now.'}
+                : hasQuery
+                  ? 'No sessions match your search.'
+                  : 'No open sessions right now.'}
             </p>
             <p className="text-gh-muted text-xs mt-2">
               {sessions.length === 0
                 ? 'Start a Copilot CLI session and it will appear here automatically.'
-                : 'Start or resume a session and it will appear here automatically.'}
+                : hasQuery
+                  ? 'Try a different ID or title.'
+                  : 'Start or resume a session and it will appear here automatically.'}
             </p>
           </div>
         )}
 
-        {activeSessions.length > 0 && browse.totalItems === 0 && !error && (
+        {sessionsToBrowse.length > 0 && browse.totalItems === 0 && !error && (
           <div className="rounded-lg border border-gh-border bg-gh-surface p-8 text-center">
-            <p className="text-gh-muted text-sm">No open sessions match the current filters.</p>
+            <p className="text-gh-muted text-sm">
+              {hasQuery ? 'No sessions match the current search and filters.' : 'No open sessions match the current filters.'}
+            </p>
             <button
               type="button"
               onClick={resetBrowse}
