@@ -7,36 +7,57 @@ export interface RawEvent {
   parentId: string | null;
 }
 
+export interface SessionContextData {
+  cwd: string;
+  gitRoot?: string;
+  branch?: string;
+  headCommit?: string;
+  baseCommit?: string;
+  repository?: string;
+  hostType?: string;
+}
+
 export interface SessionStartData {
   sessionId: string;
   version: number;
   producer: string;
   copilotVersion: string;
   startTime: string;
-  context: {
-    cwd: string;
-    gitRoot?: string;
-    branch?: string;
-    headCommit?: string;
-    baseCommit?: string;
-  };
+  context: SessionContextData;
   alreadyInUse: boolean;
+  remoteSteerable?: boolean;
+}
+
+export interface SessionResumeData {
+  resumeTime: string;
+  eventCount: number;
+  selectedModel?: string;
+  reasoningEffort?: string;
+  context?: SessionContextData;
+  alreadyInUse?: boolean;
 }
 
 export interface UserMessageData {
   content: string;
   transformedContent?: string;
-  source: string;
+  attachments?: Array<Record<string, unknown>>;
+  agentMode?: string;
+  source?: string;
   interactionId: string;
 }
 
 export interface AssistantMessageData {
   messageId: string;
   content: string;
+  encryptedContent?: string;
+  phase?: string;
   toolRequests?: ToolRequest[];
   interactionId: string;
   outputTokens?: number;
+  reasoningOpaque?: string;
   reasoningText?: string;
+  requestId?: string;
+  parentToolCallId?: string;
 }
 
 export interface ToolRequest {
@@ -52,11 +73,39 @@ export interface ToolRequest {
 
 export interface ToolExecutionCompleteData {
   toolCallId: string;
-  toolName: string;
-  interactionId: string;
+  toolName?: string;
+  interactionId?: string;
   success: boolean;
+  model?: string;
   result?: { content: string; detailedContent?: string };
   error?: { message: string; code: string };
+  toolTelemetry?: Record<string, unknown>;
+  parentToolCallId?: string;
+}
+
+export interface SessionErrorData {
+  errorType: string;
+  message: string;
+  statusCode?: number;
+  providerCallId?: string;
+}
+
+export interface SessionEventError {
+  type: string;
+  message: string;
+  timestamp: string;
+  statusCode?: number;
+}
+
+export interface SystemNotificationData {
+  content?: string;
+  kind?: {
+    type?: string;
+    agentId?: string;
+    agentType?: string;
+    description?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface ShutdownData {
@@ -71,6 +120,10 @@ export interface ShutdownData {
   };
   modelMetrics?: Record<string, unknown>;
   currentModel?: string;
+  currentTokens?: number;
+  systemTokens?: number;
+  conversationTokens?: number;
+  toolDefinitionsTokens?: number;
 }
 
 export interface MessagePreview {
@@ -192,7 +245,8 @@ export interface SessionSummary {
   totalPremiumRequests: number | null; // exact when present in session.shutdown
   totalPremiumRequestsEstimate: number; // exact shutdown value, or shutdown value plus completed-turn heuristic estimate
   totalPremiumRequestsSource: SessionUsageMetricSource;
-  currentMode: string; // 'interactive' | 'plan' | 'auto' — from session.mode_changed events
+  currentMode: string; // 'interactive' | 'plan' | 'autopilot' — from session.mode_changed events
+  lastError?: SessionEventError | null;
   activeSubAgents: ActiveSubAgent[];
   hasPlan: boolean; // plan.md exists in session directory
   isPlanPending: boolean; // exit_plan_mode has been called and is awaiting user approval

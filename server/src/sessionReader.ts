@@ -6,9 +6,14 @@ import Database from 'better-sqlite3';
 import yaml from 'js-yaml';
 import type {
   RawEvent,
+  SessionContextData,
+  SessionErrorData,
+  SessionEventError,
+  SessionResumeData,
   SessionStartData,
   UserMessageData,
   AssistantMessageData,
+  SystemNotificationData,
   ToolExecutionCompleteData,
   ShutdownData,
   ParsedMessage,
@@ -51,10 +56,13 @@ type SessionSummaryScan = {
   reducerEvents: RawEvent[];
   eventCount: number;
   startData?: SessionStartData;
+  latestContext?: SessionContextData;
   startedAt?: string;
   shutdownData?: ShutdownData;
   lastShutdownAt?: string;
   lastModelChange?: string;
+  lastResumeModel?: string;
+  lastError?: SessionEventError | null;
   lastActivityAt?: string;
   firstUserContent?: string;
   messageCount: number;
@@ -562,6 +570,7 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
         toolCallId: string; 
         agentName: string; 
         agentDisplayName: string; 
+        agentDescription?: string;
         sessionId?: string;
         model?: string;
       };
@@ -601,6 +610,9 @@ function buildActiveSubAgents(events: RawEvent[]): ActiveSubAgent[] {
       
       if (d.model) {
         models.set(d.toolCallId, d.model);
+      }
+      if (d.agentDescription && !descriptions.has(d.toolCallId)) {
+        descriptions.set(d.toolCallId, d.agentDescription);
       }
     }
   }
@@ -1248,6 +1260,69 @@ function parseTimestampMs(timestamp: string): number | null {
   return Number.isNaN(value) ? null : value;
 }
 
+function mergeSessionContext(
+  current?: SessionContextData,
+  next?: SessionContextData,
+): SessionContextData | undefined {
+  if (!next) return current;
+  return { ...current, ...next };
+}
+
+function toSessionEventError(event: RawEvent): SessionEventError | null {
+  if (event.type !== 'session.error') return null;
+
+  const data = event.data as Partial<SessionErrorData>;
+  if (typeof data.errorType !== 'string' || typeof data.message !== 'string') {
+    return null;
+  }
+
+  return {
+    type: data.errorType,
+    message: data.message,
+    timestamp: event.timestamp,
+    ...(typeof data.statusCode === 'number' ? { statusCode: data.statusCode } : {}),
+  };
+}
+
+function findLatestSessionContext(
+  events: RawEvent[],
+  initialContext?: SessionContextData,
+): SessionContextData | undefined {
+  let context = initialContext;
+
+  for (const event of events) {
+    if (event.type !== 'session.resume') continue;
+    const data = event.data as unknown as SessionResumeData;
+    context = mergeSessionContext(context, data.context);
+  }
+
+  return context;
+}
+
+function findLatestResumeModel(events: RawEvent[]): string | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.type !== 'session.resume') continue;
+    const data = event.data as unknown as SessionResumeData;
+    if (data.selectedModel) {
+      return data.selectedModel;
+    }
+  }
+
+  return undefined;
+}
+
+function findLastSessionError(events: RawEvent[]): SessionEventError | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const error = toSessionEventError(events[index]);
+    if (error) {
+      return error;
+    }
+  }
+
+  return null;
+}
+
 function getUsageEstimateFromAssistantTurns(events: RawEvent[], fallbackTimestamp: string): Pick<
   SessionUsageMetrics,
   'totalApiDurationEstimateMs' | 'totalPremiumRequestsEstimate'
@@ -1429,6 +1504,7 @@ function reduceEventForSessionSummary(event: RawEvent): RawEvent | null {
         toolCallId?: string;
         agentName?: string;
         agentDisplayName?: string;
+        agentDescription?: string;
         sessionId?: string;
       };
       return {
@@ -1438,6 +1514,7 @@ function reduceEventForSessionSummary(event: RawEvent): RawEvent | null {
           toolCallId: data.toolCallId,
           agentName: data.agentName,
           agentDisplayName: data.agentDisplayName,
+          ...(data.agentDescription ? { agentDescription: data.agentDescription } : {}),
           ...(data.sessionId ? { sessionId: data.sessionId } : {}),
         },
       };
@@ -1450,6 +1527,17 @@ function reduceEventForSessionSummary(event: RawEvent): RawEvent | null {
         data: {
           ...(parentToolCallId ? { parentToolCallId } : {}),
           toolCallId: data.toolCallId,
+        },
+      };
+    }
+    case 'system.notification': {
+      const data = event.data as SystemNotificationData;
+      return {
+        ...event,
+        data: {
+          ...(parentToolCallId ? { parentToolCallId } : {}),
+          ...(data.content ? { content: data.content } : {}),
+          ...(data.kind ? { kind: data.kind } : {}),
         },
       };
     }
@@ -1479,12 +1567,15 @@ function scanSessionSummary(eventsFile: string): SessionSummaryScan | null {
     const content = fs.readFileSync(eventsFile, 'utf8');
 
     let startData: SessionStartData | undefined;
-      let startedAt: string | undefined;
-      let shutdownData: ShutdownData | undefined;
-      let lastShutdownAt: string | undefined;
-      let lastModelChange: string | undefined;
-      let lastActivityAt: string | undefined;
-      let firstUserContent: string | undefined;
+    let latestContext: SessionContextData | undefined;
+    let startedAt: string | undefined;
+    let shutdownData: ShutdownData | undefined;
+    let lastShutdownAt: string | undefined;
+    let lastModelChange: string | undefined;
+    let lastResumeModel: string | undefined;
+    let lastError: SessionEventError | null = null;
+    let lastActivityAt: string | undefined;
+    let firstUserContent: string | undefined;
     let messageCount = 0;
     let eventCount = 0;
     let lineStart = 0;
@@ -1507,6 +1598,7 @@ function scanSessionSummary(eventsFile: string): SessionSummaryScan | null {
 
       if (event.type === 'session.start' && !startData) {
         startData = event.data as unknown as SessionStartData;
+        latestContext = startData.context;
         startedAt = startData.startTime ?? event.timestamp;
         continue;
       }
@@ -1520,6 +1612,18 @@ function scanSessionSummary(eventsFile: string): SessionSummaryScan | null {
       if (event.type === 'session.model_change') {
         const data = event.data as { newModel?: string };
         lastModelChange = data.newModel ?? lastModelChange;
+        continue;
+      }
+
+      if (event.type === 'session.resume') {
+        const data = event.data as unknown as SessionResumeData;
+        lastResumeModel = data.selectedModel ?? lastResumeModel;
+        latestContext = mergeSessionContext(latestContext, data.context);
+        continue;
+      }
+
+      if (event.type === 'session.error') {
+        lastError = toSessionEventError(event) ?? lastError;
         continue;
       }
 
@@ -1552,10 +1656,13 @@ function scanSessionSummary(eventsFile: string): SessionSummaryScan | null {
       reducerEvents,
       eventCount,
       startData,
+      latestContext,
       startedAt,
       shutdownData,
       lastShutdownAt,
       lastModelChange,
+      lastResumeModel,
+      lastError,
       lastActivityAt,
       firstUserContent,
       messageCount,
@@ -1594,6 +1701,7 @@ function parseSessionSummaryAtPath(sessionDir: string, sessionId: string): Sessi
   const activeSubAgents = buildActiveSubAgents(scan.reducerEvents);
   const hasPlan = fs.existsSync(planFile);
   const lastActivityAt = scan.lastActivityAt ?? scan.startedAt;
+  const sessionContext = scan.latestContext ?? scan.startData.context;
   const usageMetrics = buildSessionUsageMetrics(
     scan.reducerEvents,
     lastActivityAt,
@@ -1608,8 +1716,8 @@ function parseSessionSummaryAtPath(sessionDir: string, sessionId: string): Sessi
     id: sessionId,
     title: sessionSummary ?? titleFromContent(scan.firstUserContent),
     summary: sessionSummary,
-    projectPath: scan.startData.context?.cwd ?? 'Unknown',
-    gitBranch: scan.startData.context?.branch ?? null,
+    projectPath: sessionContext?.cwd ?? 'Unknown',
+    gitBranch: sessionContext?.branch ?? null,
     startedAt: scan.startedAt,
     lastActivityAt,
     durationMs: Date.parse(lastActivityAt) - Date.parse(scan.startedAt),
@@ -1620,9 +1728,10 @@ function parseSessionSummaryAtPath(sessionDir: string, sessionId: string): Sessi
     isTaskComplete: isOpen && sessionStatus === 'task_complete',
     isIdle: isOpen && sessionStatus === 'idle',
     messageCount: scan.messageCount,
-    model: scan.lastModelChange ?? scan.shutdownData?.currentModel,
+    model: scan.lastModelChange ?? scan.lastResumeModel ?? scan.shutdownData?.currentModel,
     ...usageMetrics,
     currentMode,
+    lastError: scan.lastError ?? null,
     activeSubAgents,
     hasPlan,
     isPlanPending: isOpen && hasPendingPlanApproval(scan.reducerEvents),
@@ -1658,6 +1767,7 @@ function parseSessionDirAtPath(sessionDir: string, sessionId: string): SessionDe
 
   const startData = startEvent.data as unknown as SessionStartData;
   const startedAt = startData.startTime ?? startEvent.timestamp;
+  const sessionContext = findLatestSessionContext(events, startData.context);
 
   const messages = buildMessages(events, isOpen);
   const lastActivityAt = events[events.length - 1]?.timestamp ?? startedAt;
@@ -1666,8 +1776,11 @@ function parseSessionDirAtPath(sessionDir: string, sessionId: string): SessionDe
   const usageMetrics = buildSessionUsageMetrics(events, lastActivityAt, shutdownData, shutdownEvent?.timestamp);
   // Prefer the last model_change event (covers active sessions); fall back to shutdown metadata
   const lastModelChange = [...events].reverse().find((e) => e.type === 'session.model_change');
+  const resumeModel = findLatestResumeModel(events);
+  const lastError = findLastSessionError(events);
   const model =
     (lastModelChange?.data as unknown as { newModel?: string } | undefined)?.newModel ??
+    resumeModel ??
     shutdownData?.currentModel;
 
   const activeSubAgents = buildActiveSubAgents(events);
@@ -1685,8 +1798,8 @@ function parseSessionDirAtPath(sessionDir: string, sessionId: string): SessionDe
     id: sessionId,
     title: sessionSummary ?? extractTitle(messages),
     summary: sessionSummary,
-    projectPath: startData.context?.cwd ?? 'Unknown',
-    gitBranch: startData.context?.branch ?? null,
+    projectPath: sessionContext?.cwd ?? 'Unknown',
+    gitBranch: sessionContext?.branch ?? null,
     startedAt,
     lastActivityAt,
     durationMs: Date.parse(lastActivityAt) - Date.parse(startedAt),
@@ -1700,6 +1813,7 @@ function parseSessionDirAtPath(sessionDir: string, sessionId: string): SessionDe
     model,
     ...usageMetrics,
     currentMode: getCurrentMode(events),
+    lastError,
     activeSubAgents,
     hasPlan,
     isPlanPending,
