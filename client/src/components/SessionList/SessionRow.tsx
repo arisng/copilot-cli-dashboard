@@ -10,6 +10,8 @@ interface Props {
   session: SessionSummary;
   selected?: boolean;
   onSelectToggle?: () => void;
+  isPinned?: boolean;
+  onPinToggle?: () => void;
 }
 
 function CopyBranch({ branch }: { branch: string }) {
@@ -103,7 +105,7 @@ function SubAgentRow({ agent }: { agent: ActiveSubAgent }) {
   );
 }
 
-export function SessionRow({ session, selected = false, onSelectToggle }: Props) {
+export function SessionRow({ session, selected = false, onSelectToggle, isPinned = false, onPinToggle }: Props) {
   const navigate = useNavigate();
   const hasSubAgents = session.activeSubAgents.length > 0;
   const [expanded, setExpanded] = useState(false);
@@ -228,16 +230,38 @@ export function SessionRow({ session, selected = false, onSelectToggle }: Props)
         </td>
 
         <td className="px-4 py-2.5 text-gh-muted align-top">
-          <svg
-            viewBox="0 0 16 16"
-            width="12"
-            height="12"
-            fill="currentColor"
-            aria-hidden="true"
-            className="mt-1 transition-colors group-hover:text-gh-text"
-          >
-            <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
-          </svg>
+          <div className="flex items-center gap-1">
+            {onPinToggle && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onPinToggle(); }}
+                title={isPinned ? 'Unpin session' : 'Pin session'}
+                className={`rounded p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gh-accent/40 ${
+                  isPinned ? 'text-gh-accent hover:bg-gh-accent/10' : 'text-gh-muted hover:bg-gh-accent/10 hover:text-gh-accent'
+                }`}
+              >
+                {isPinned ? (
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <path d="M3 3a2 2 0 012-2h6a2 2 0 012 2v10.5a.5.5 0 01-.78.42l-5.22-3.48-5.22 3.48A.5.5 0 011 13.5V3z" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M3 3a2 2 0 012-2h6a2 2 0 012 2v10.5a.5.5 0 01-.78.42l-5.22-3.48-5.22 3.48A.5.5 0 011 13.5V3z" />
+                  </svg>
+                )}
+              </button>
+            )}
+            <svg
+              viewBox="0 0 16 16"
+              width="12"
+              height="12"
+              fill="currentColor"
+              aria-hidden="true"
+              className="mt-1 transition-colors group-hover:text-gh-text"
+            >
+              <path d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" />
+            </svg>
+          </div>
         </td>
       </tr>
 

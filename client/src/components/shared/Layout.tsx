@@ -17,6 +17,7 @@ export function Layout({ children }: Props) {
   const watchMatch = useMatch('/watch');
   const isDesktopDetailRoute = detailMatch !== null;
   const isWatchRoute = watchMatch !== null;
+  const isListRoute = pathname === '/';
   const mobileHref = detailMatch?.params.id ? `/m/sessions/${detailMatch.params.id}` : '/m';
   const showMobileSwitch = pathname === '/' || detailMatch !== null;
   useSessionNotifications(sessions, permission, markUnavailable);
@@ -127,7 +128,7 @@ export function Layout({ children }: Props) {
       {/* Content */}
       <main
         className={`flex-1 min-h-0 w-full ${
-          isDesktopDetailRoute
+          isDesktopDetailRoute || isListRoute
             ? 'overflow-y-auto px-4 py-6 xl:overflow-hidden xl:py-4'
             : isWatchRoute
               ? 'overflow-hidden'
