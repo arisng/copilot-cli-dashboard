@@ -44,7 +44,7 @@ The application should expose only the production Express server on port `3001` 
 - `README.md` documents Dev Tunnels for remote phone access in both dev and production modes.
 - `package.json` exposes `tunnel:client` and `tunnel:prod` scripts.
 - `bin/tunnel-client.js` and `bin/tunnel-prod.js` are hard-wired to the `devtunnel` CLI.
-- `docs/devtunnel.md` documents the fixed tunnel ID workflow and its current script behavior.
+- `.docs/how-to/operations/devtunnel.md` documents the fixed tunnel ID workflow and its current script behavior.
 - The existing docs do not yet position Cloudflare, Tailscale, and Dev Tunnels in a clear primary-secondary-fallback order.
 - The existing docs do not clearly compare service limits, such as bandwidth caps, in-flight request limits, or other public-sharing constraints.
 
@@ -128,7 +128,7 @@ Preferred rollout shape:
   - Tailscale as the secondary option
   - Dev Tunnels as the last-resort fallback
 - Narrow public-tunnel documentation to the production server on port `3001` and remove the public-dev-server recommendation from the primary path.
-- Add a new documentation page for Cloudflare Tunnel usage, or replace `docs/devtunnel.md` with a provider-agnostic remote-access document.
+- Add a new documentation page for Cloudflare Tunnel usage, or replace `.docs/how-to/operations/devtunnel.md` with a provider-agnostic remote-access document.
 - Add helper scripts such as:
   - `tunnel:cloudflare:prod`
 - Add guidance for named Cloudflare Tunnel setup with a stable hostname as a nice-to-have upgrade path.
@@ -184,5 +184,5 @@ Preferred rollout shape:
 - `package.json`
 - `bin/tunnel-client.js`
 - `bin/tunnel-prod.js`
-- `docs/devtunnel.md`
+- `.docs/how-to/operations/devtunnel.md`
 - Terminal output from `npm run tunnel:prod` on 2026-04-04 showing Dev Tunnels rate-limit and bandwidth-cap errors

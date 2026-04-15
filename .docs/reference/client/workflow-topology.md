@@ -1,8 +1,8 @@
-# Workflow Topology
+# Workflow Topology Reference
 
 Reference for `WorkflowTopologyView.tsx` and the normalized taxonomy it depends on.
 
-## Conceptual Model
+## Conceptual model
 
 Each topology round maps to one assistant turn:
 
@@ -14,7 +14,7 @@ User Prompt → Main Agent (round 1) → Tool Calls / Sub-Agents / Detached Shel
 
 Rounds are identified by `roundIndex`. The main agent node for each round is the orchestrator; response nodes are the tools or workers it dispatched.
 
-## Node Types
+## Node types
 
 | Type | When created | Phase |
 |------|-------------|-------|
@@ -25,7 +25,7 @@ Rounds are identified by `roundIndex`. The main agent node for each round is the
 | `sub-agent` | Upgraded from `tool-call` when server `ActiveSubAgent` data exists | Phase 2 |
 | `result` | Last assistant message with no tool requests | Phase 1 |
 
-## Two-Phase Pipeline
+## Two-phase pipeline
 
 ### Phase 1 — `buildMultiTurnGraph(messages: ParsedMessage[])`
 
@@ -37,7 +37,7 @@ Parses `ParsedMessage[]` and builds raw rounds. Key decisions:
 - All other tools → `type: 'tool-call'`.
 - "Processing..." assistant messages (no content, no tool requests) are skipped; their response nodes are merged into the previous round.
 
-### Phase 2 — Enrichment useMemo
+### Phase 2 — Enrichment (`useMemo`)
 
 ```ts
 const agentByToolCallId = new Map(activeSubAgents.map(a => [a.toolCallId, a]));
@@ -63,7 +63,7 @@ const updatedNodes = rawNodes.map(node => {
 
 `backgroundMode` set in Phase 1 drives `backgroundInfo.detached` in Phase 2, which controls the "BACKGROUND TASK" vs "SUB AGENT" badge.
 
-## Normalized Taxonomy on Nodes
+## Normalized taxonomy on nodes
 
 Each node's `metadata` carries normalized fields from `sessionTypes.ts`:
 
@@ -100,7 +100,7 @@ metadata: {
 | `orchestrator` | Main session agent |
 | `unknown` | Could not be determined |
 
-## Badge and Color Reference
+## Badge and color reference
 
 | `type` | `backgroundInfo.detached` | Badge text | Border |
 |--------|--------------------------|-----------|--------|
@@ -113,7 +113,7 @@ metadata: {
 | `detached-shell` | — | `detached shell` | amber |
 | `result` | — | *(none)* | `gh-active` green |
 
-## Filter Behavior
+## Filter behavior
 
 `applyNodeFilter(enrichedRounds, enrichedNodes, enrichedEdges, filter)` is applied after Phase 2. Core types (`user-prompt`, `main-agent`, `result`) are never hidden.
 
@@ -125,7 +125,7 @@ metadata: {
 
 `filter.agentTypes` and `filter.dispatchFamilies` filter non-core nodes by their taxonomy metadata.
 
-## Model Provenance Display
+## Model provenance display
 
 | `modelInfo.source` | Display |
 |--------------------|---------|
@@ -134,7 +134,7 @@ metadata: {
 | `session-fallback` | plain text |
 | `inferred` | `~ model-name` (italic, muted) |
 
-## Bug Fix History
+## Bug fix history
 
 Four bugs were fixed when the two-phase pipeline was introduced:
 
@@ -142,3 +142,8 @@ Four bugs were fixed when the two-phase pipeline was introduced:
 2. **Dead enrichment step** — Phase 2 was checking `existingToolCallIds` which contained every dispatch node's `toolCallId`, so the upgrade was always skipped. Fixed by replacing "add new nodes" with "upgrade matching nodes by toolCallId".
 3. **Enriched nodes had no round assignment** — `applyNodeFilter` was called on `rawRounds` instead of `updatedRounds` (the enriched rounds). Fixed by passing `enrichedRounds` to `applyNodeFilter`.
 4. **All sub-agents showed "BACKGROUND TASK"** — The `detached` flag was derived from `agent.status?.scope === 'worker'`, which is true for every agent. Fixed by storing `backgroundMode: args.mode === 'background'` in Phase 1 metadata and reading it in Phase 2.
+
+## Related references
+
+- [Client Architecture Reference](client-architecture.md)
+- [Server Architecture Reference](../server/server-architecture.md)

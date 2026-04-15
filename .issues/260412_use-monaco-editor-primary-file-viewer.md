@@ -91,7 +91,7 @@ The remaining work is to unify viewer behavior across `Files`, `Plan`, `Checkpoi
 - `client/src/components/SessionDetail/SessionDetail.tsx`
 - `client/src/components/mobile/MobileSessionPane.tsx`
 - `client/src/utils/fileUtils.ts`
-- `docs/client.md`
+- `.docs/reference/client/client-architecture.md`
 
 ## Implementation Approach
 
@@ -155,7 +155,7 @@ The viewer system should still answer these three questions consistently:
 4. Keep Monaco as the default desktop viewer for supported non-markdown text/code files.
 5. Extend markdown preview with custom media rendering rules for image, GIF, and video while maintaining sanitization and graceful fallbacks.
 6. Make the Monaco container inherit its parent's available height and trigger layout from container resize, not only global window resize.
-7. Update `docs/client.md` so the final behavior is documented before the issue is marked complete again.
+7. Update `.docs/reference/client/client-architecture.md` so the final behavior is documented before the issue is marked complete again.
 
 ## Out of Scope
 

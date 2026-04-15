@@ -31,7 +31,7 @@ Enable viewing image files (e.g., `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) insi
 - [x] Add a fallback for unsupported image assets (corrupt file, unsupported format) with a friendly message and download button.
 - [x] Ensure path safety and security: only render images from permitted artifact paths (`files/` scoped), avoid unescaped filesystem URL injection.
 - [ ] Add tests at `client/src/components/SessionDetail/__tests__` or equivalent for new image artifact rendering and selection behavior.
-- [x] Add documentation note in `docs/client.md` or `docs/session-model.md` describing supported artifact types and behavior in the UI.
+- [x] Add documentation note in `.docs/reference/client/client-architecture.md` or `.docs/reference/session-state/session-data-model.md` describing supported artifact types and behavior in the UI.
 
 ## Acceptance Criteria
 

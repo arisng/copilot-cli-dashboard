@@ -48,7 +48,7 @@ This enables developers to quickly inspect ongoing Copilot CLI progress artifact
 - [ ] Switching tabs loads / displays the artifact folder contents or empty state message.
 - [ ] Path is correctly derived from the session's `session-id` and is cross-platform safe.
 - [ ] If artifact directories are missing, show a clear message with the expected location.
-- [ ] Developer notes or links are added to session detail docs in `docs/client.md` or related docs.
+- [ ] Developer notes or links are added to session detail docs in `.docs/reference/client/client-architecture.md` or related docs.
 
 ## Notes
 

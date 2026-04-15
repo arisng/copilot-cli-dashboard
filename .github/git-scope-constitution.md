@@ -12,7 +12,7 @@ This constitution defines the repository-specific scopes for `copiloting-agents`
 
 - `client/src/api`, `client/src/hooks`, `client/src/components/{mobile,SessionList,SessionDetail,shared}`, `client/src/styles`
 - `server/src/{index,router,sessionReader,sessionTypes,utils}`
-- `docs/{client,server,session-model}.md` and `README.md`
+- `.docs/reference/client/client-architecture.md`, `.docs/reference/server/server-architecture.md`, `.docs/reference/session-state/session-data-model.md` and `README.md`
 - `bin/{cli,tunnel-prod}.js`
 - `AGENTS.md` and `.github/skills/frontend-skill.md`
 - root and workspace config/manifests (`package.json`, `client/package.json`, `server/package.json`, `tsconfig*.json`, `vite.config.ts`, `tailwind.config.ts`, `postcss.config.js`)

@@ -247,7 +247,7 @@ npm run tunnel:prod
 
 **Limitations:** Free tier has bandwidth caps (observed failures at ~5GB/month) and rate limits that may cause 429 errors.
 
-See [docs/devtunnel.md](docs/devtunnel.md) for fixed tunnel IDs and advanced usage.
+See [.docs/how-to/operations/devtunnel.md](.docs/how-to/operations/devtunnel.md) for fixed tunnel IDs and advanced usage.
 
 ## How It Works
 
@@ -343,10 +343,7 @@ node server/dist/index.js  # starts the server; client/dist/ is served automatic
 copiloting-agents/
 ├── server/          # Express API — reads detected Copilot session-state directories
 ├── client/          # React + Vite + Tailwind CSS dashboard
-└── docs/            # Architecture docs
-    ├── client.md
-    ├── server.md
-    └── session-model.md
+└── .docs/           # Diátaxis-organised documentation (see .docs/index.md)
 ```
 
 See [AGENTS.md](AGENTS.md) for development conventions.

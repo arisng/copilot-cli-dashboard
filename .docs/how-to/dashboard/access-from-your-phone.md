@@ -1,63 +1,29 @@
 # How to Access the Dashboard From Your Phone
 
-This guide shows how to open the dashboard on a phone while the app runs on your computer.
+> **This page has moved.** The complete guide — covering LAN access, Cloudflare Tunnel, Tailscale, and Microsoft Dev Tunnels — is now at:
+>
+> **[How to Access the Dashboard Remotely](../operations/remote-access.md)**
 
-## When to use this guide
+The operations guide covers all access methods with a provider comparison table and troubleshooting steps.
 
-Use this when you want to inspect active Copilot CLI sessions from a mobile browser on the same network or through a tunnel.
+## Quick reference
 
-## Before you start
+For the common case (same Wi-Fi):
 
-- The dashboard is already running locally
-- You know your computer's LAN IP address
+```bash
+HOST=0.0.0.0 npm start
+# then open http://<PC_IP>:3001 on your phone
+```
 
-## Same Wi-Fi network
+For a public URL without an account:
 
-1. Start the app so it listens on all interfaces:
+```bash
+npm start
+npm run tunnel:cloudflare   # second terminal
+```
 
-   ```bash
-   HOST=0.0.0.0 PORT=5173 npm run dev
-   ```
+## See also
 
-   If you are using the production server instead, bind that process with an explicit `PORT` value so the phone URL stays predictable:
-
-   ```bash
-   HOST=0.0.0.0 PORT=3001 npm start
-   ```
-
-2. On your phone, open the matching URL:
-
-   - `http://<PC_IP>:5173` for the development client
-   - `http://<PC_IP>:<PORT>` for the production server, using the same port you passed to `npm start` or the port printed in the startup banner if it auto-selected a free one
-
-3. If the page does not load, confirm that your firewall allows inbound traffic on the chosen port.
-
-## Remote access through Dev Tunnels
-
-1. Keep the dashboard running locally.
-2. Install and sign in to Dev Tunnels:
-
-   ```bash
-   winget install Microsoft.devtunnel
-   devtunnel user login
-   ```
-
-3. Expose the matching port:
-
-   ```bash
-   npm run tunnel:client
-   ```
-
-   Or, if you are serving production locally:
-
-   ```bash
-   npm run tunnel:prod
-   ```
-
-4. Open the tunnel URL from your phone and sign in with the same account if prompted.
-
-## Next steps
-
+- [How to Access the Dashboard Remotely](../operations/remote-access.md)
 - [How to Run the Production Server](run-the-production-server.md)
-- [About the Dashboard Architecture](../../explanation/dashboard/how-it-works.md)
 
