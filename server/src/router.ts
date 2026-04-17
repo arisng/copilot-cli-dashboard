@@ -16,6 +16,12 @@ router.get('/health', (_req, res) => {
   res.json({ ok: true, timestamp: new Date().toISOString() });
 });
 
+router.get('/config', (_req, res) => {
+  res.json({
+    vscodeSessionsEnabled: process.env.COPILOT_VSCODE_SESSIONS === 'true',
+  });
+});
+
 router.get('/sessions', (_req, res) => {
   const sessions = listAllSessions();
   res.json({ sessions });
@@ -176,6 +182,10 @@ router.post('/sessions/:sessionId/message', (req, res) => {
   if (!result.success) {
     if (result.error?.includes('Session not found')) {
       res.status(404).json({ success: false, error: result.error });
+      return;
+    }
+    if (result.error?.includes('only supported for CLI sessions')) {
+      res.status(400).json({ success: false, error: result.error });
       return;
     }
     res.status(500).json({ success: false, error: result.error });
