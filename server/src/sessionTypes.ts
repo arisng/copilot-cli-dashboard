@@ -222,8 +222,15 @@ export type SessionUsageMetricSource =
   | 'assistant_turn_estimate'
   | 'shutdown_plus_assistant_turn_estimate';
 
+export interface SessionCapabilities {
+  supportsInjection: boolean;      // can append to event stream
+  supportsToolLifecycle: boolean;  // has tool.execution_start/complete events
+  supportsPlanArtifacts: boolean;  // has plan.md, checkpoints/, session.db
+}
+
 export interface SessionSummary {
   id: string;
+  source: 'cli' | 'vscode';
   title: string;
   summary: string | null;
   projectPath: string;
@@ -251,6 +258,7 @@ export interface SessionSummary {
   hasPlan: boolean; // plan.md exists in session directory
   isPlanPending: boolean; // exit_plan_mode has been called and is awaiting user approval
   previewMessages?: MessagePreview[]; // last 2 messages (1 user + 1 assistant)
+  capabilities: SessionCapabilities;
 }
 
 export interface TodoItem {
@@ -315,6 +323,10 @@ export interface SessionDbInspection {
   databasePath: string;
   availableTables: string[];
   table: SessionDbTablePreview;
+}
+
+export interface ServerConfig {
+  vscodeSessionsEnabled: boolean;
 }
 
 export interface SessionDetail extends SessionSummary {
