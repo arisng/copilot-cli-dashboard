@@ -33,8 +33,15 @@ export interface SessionEventError {
   statusCode?: number;
 }
 
+export interface SessionCapabilities {
+  supportsInjection: boolean;
+  supportsToolLifecycle: boolean;
+  supportsPlanArtifacts: boolean;
+}
+
 export interface SessionSummary {
   id: string;
+  source: 'cli' | 'vscode';
   title: string;
   summary: string | null;
   projectPath: string;
@@ -62,6 +69,7 @@ export interface SessionSummary {
   hasPlan: boolean;
   isPlanPending: boolean;
   previewMessages?: MessagePreview[];
+  capabilities: SessionCapabilities;
 }
 
 export interface ToolRequest {
@@ -169,6 +177,10 @@ export interface SearchResult {
   fileName: string;
   snippet: string;
   lastModified: string;
+}
+
+export interface ServerConfig {
+  vscodeSessionsEnabled: boolean;
 }
 
 export interface SessionDetail extends SessionSummary {
@@ -378,8 +390,8 @@ export async function runGC(dryRun = false): Promise<GCResult> {
 
 // === Session Search API Function ===
 
-export async function searchSessions(query: string): Promise<SessionSearchResult[]> {
-  const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
-  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+export async function fetchServerConfig(): Promise<ServerConfig> {
+  const res = await fetch(`${API_BASE}/config`);
+  if (!res.ok) throw new Error(`Failed to fetch config: ${res.status}`);
   return res.json();
 }
