@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSessions } from '../../hooks/useSessions.ts';
 import {
@@ -9,6 +9,7 @@ import {
   type SessionBrowseStatus,
   useSessionBrowse,
 } from '../../hooks/useSessionBrowse.ts';
+import { fetchServerConfig, type ServerConfig } from '../../api/client.ts';
 import { LoadingSpinner } from '../shared/LoadingSpinner.tsx';
 import {
   BrowsePagination,
@@ -60,12 +61,24 @@ export function SessionList() {
     }
   });
 
+  const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
+  const [showVscodeSessions, setShowVscodeSessions] = useState(() => {
+    const raw = localStorage.getItem('copiloting-agents.showVscodeSessions');
+    return raw === 'true';
+  });
+
+  useEffect(() => {
+    fetchServerConfig().then(setServerConfig).catch(() => setServerConfig(null));
+  }, []);
+
   function toggleView(mode: 'list' | 'grid') {
     setViewMode(mode);
     localStorage.setItem('sessionViewMode', mode);
   }
 
-  const sessionsToBrowse = sessions;
+  const sessionsToBrowse = serverConfig?.vscodeSessionsEnabled && showVscodeSessions
+    ? sessions
+    : sessions.filter((s) => s.source !== 'vscode');
   const browse = useSessionBrowse(sessionsToBrowse, browseState);
   const shownAttentionCount = browse.filteredSessions.filter((session) => session.needsAttention || session.lastError).length;
   const countLabel = browse.totalItems === sessionsToBrowse.length
@@ -329,6 +342,17 @@ export function SessionList() {
                   }))
                 }
               />
+              {serverConfig?.vscodeSessionsEnabled && (
+                <BrowseToggle
+                  label="Show VS Code"
+                  checked={showVscodeSessions}
+                  onChange={(checked) => {
+                    setShowVscodeSessions(checked);
+                    localStorage.setItem('copiloting-agents.showVscodeSessions', String(checked));
+                    setBrowseState((previous) => ({ ...previous, page: 1 }));
+                  }}
+                />
+              )}
             </div>
           </div>
         )}
@@ -348,6 +372,7 @@ export function SessionList() {
             </p>
             <p className="text-gh-muted text-xs mt-2">
               Start a Copilot CLI session and it will appear here automatically.
+              {serverConfig?.vscodeSessionsEnabled && ' VS Code sessions are shown when the toggle is enabled.'}
             </p>
           </div>
         )}
