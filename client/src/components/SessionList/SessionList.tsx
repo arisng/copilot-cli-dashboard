@@ -64,7 +64,9 @@ export function SessionList() {
   const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
   const [showVscodeSessions, setShowVscodeSessions] = useState(() => {
     const raw = localStorage.getItem('copiloting-agents.showVscodeSessions');
-    return raw === 'true';
+    // Default to true when no explicit preference is saved, so VS Code sessions
+    // are visible by default when the server feature flag is enabled.
+    return raw === null ? true : raw === 'true';
   });
 
   useEffect(() => {
