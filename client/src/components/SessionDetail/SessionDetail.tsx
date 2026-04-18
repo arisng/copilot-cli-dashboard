@@ -1876,6 +1876,10 @@ export function SessionDetail() {
       return filesGroup?.status === 'ok';
     }
 
+    if (option.value === 'session-db') {
+      return session.capabilities?.supportsPlanArtifacts ?? true;
+    }
+
     return true;
   });
   const resolvedView = availableViews.some((option) => option.value === activeView) ? activeView : 'main';

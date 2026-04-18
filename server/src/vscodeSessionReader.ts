@@ -8,13 +8,7 @@ import type {
   SessionCapabilities,
   SessionStartData,
 } from './sessionTypes.js';
-import {
-  needsAttention,
-  lastSessionStatus,
-  hasPendingWork,
-  hasPendingPlanApproval,
-  getCurrentMode,
-} from './utils/needsAttention.js';
+import { getCurrentMode } from './utils/needsAttention.js';
 
 // ============================================================================
 // Discovery
@@ -59,7 +53,11 @@ function parseWorkspaceJson(workspacePath: string): { workspaceUri?: string } | 
   }
   try {
     const content = fs.readFileSync(workspaceJsonPath, 'utf8');
-    const data = JSON.parse(content) as { workspaceUri?: string };
+    const data = JSON.parse(content) as { folder?: string; workspaceUri?: string };
+    // VS Code uses `folder`; some variants may use `workspaceUri`
+    if (data.folder) {
+      return { workspaceUri: data.folder };
+    }
     return data;
   } catch {
     return null;
@@ -70,16 +68,31 @@ function workspaceUriToPath(workspaceUri: string | undefined): string {
   if (!workspaceUri) {
     return 'VS Code';
   }
+
+  // Decode URL-encoded characters (e.g., c%3A -> c:)
+  const decoded = decodeURIComponent(workspaceUri);
+
   // file:///C:/Users/... or file:///home/...
-  if (workspaceUri.startsWith('file:///')) {
-    let filePath = workspaceUri.slice('file:///'.length);
+  if (decoded.startsWith('file:///')) {
+    let filePath = decoded.slice('file:///'.length);
     // On Windows, the path looks like C:/Users/... — convert to C:\Users\...
     if (/^[A-Za-z]:\//.test(filePath)) {
       filePath = filePath.replace(/\//g, '\\');
     }
     return filePath;
   }
-  return workspaceUri;
+
+  // WSL paths: file://wsl.localhost/...
+  if (decoded.startsWith('file://wsl.localhost/')) {
+    return decoded.slice('file://'.length);
+  }
+
+  // Remote containers: vscode-remote://... — keep as-is for identification
+  if (decoded.startsWith('vscode-remote://')) {
+    return decoded;
+  }
+
+  return decoded;
 }
 
 function discoverVscodeSessions(): VscodeSessionEntry[] {
@@ -314,9 +327,7 @@ export function listAllVscodeSessions(): SessionSummary[] {
       ?? titleFromContent(path.basename(projectPath))
       ?? 'Untitled session';
 
-    const reducerEvents = events; // Use full events for status logic
-    const currentMode = getCurrentMode(reducerEvents);
-    const sessionStatus = lastSessionStatus(reducerEvents);
+    const currentMode = getCurrentMode(events);
 
     const summary: SessionSummary = {
       id: entry.sessionId,
@@ -329,12 +340,13 @@ export function listAllVscodeSessions(): SessionSummary[] {
       lastActivityAt,
       durationMs: Date.parse(lastActivityAt) - Date.parse(startedAt),
       isOpen,
-      needsAttention: isOpen ? needsAttention(reducerEvents, isOpen) : false,
-      isWorking:
-        isOpen && (sessionStatus === 'working' || hasPendingWork(reducerEvents)),
-      isAborted: isOpen && sessionStatus === 'aborted',
-      isTaskComplete: isOpen && sessionStatus === 'task_complete',
-      isIdle: isOpen && sessionStatus === 'idle',
+      // VS Code transcripts do not reliably emit turn_end / tool_complete
+      // events with the same semantics as CLI, so we do not infer status.
+      needsAttention: false,
+      isWorking: false,
+      isAborted: false,
+      isTaskComplete: false,
+      isIdle: false,
       messageCount,
       model: undefined,
       totalApiDurationMs: null,
@@ -420,9 +432,7 @@ export function parseVscodeSessionDir(sessionId: string): SessionDetail | null {
     ?? titleFromContent(path.basename(projectPath))
     ?? 'Untitled session';
 
-  const reducerEvents = events;
-  const currentMode = getCurrentMode(reducerEvents);
-  const sessionStatus = lastSessionStatus(reducerEvents);
+  const currentMode = getCurrentMode(events);
 
   const summary: SessionSummary = {
     id: sessionId,
@@ -435,11 +445,13 @@ export function parseVscodeSessionDir(sessionId: string): SessionDetail | null {
     lastActivityAt,
     durationMs: Date.parse(lastActivityAt) - Date.parse(startedAt),
     isOpen,
-    needsAttention: isOpen ? needsAttention(reducerEvents, isOpen) : false,
-    isWorking: isOpen && (sessionStatus === 'working' || hasPendingWork(reducerEvents)),
-    isAborted: isOpen && sessionStatus === 'aborted',
-    isTaskComplete: isOpen && sessionStatus === 'task_complete',
-    isIdle: isOpen && sessionStatus === 'idle',
+    // VS Code transcripts do not reliably emit turn_end / tool_complete
+    // events with the same semantics as CLI, so we do not infer status.
+    needsAttention: false,
+    isWorking: false,
+    isAborted: false,
+    isTaskComplete: false,
+    isIdle: false,
     messageCount: messages.filter((m) => m.role === 'user').length,
     model: undefined,
     totalApiDurationMs: null,
