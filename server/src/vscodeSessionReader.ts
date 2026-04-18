@@ -269,6 +269,80 @@ const VSCODE_CAPABILITIES: SessionCapabilities = {
 };
 
 // ============================================================================
+// Synthetic status inference for VS Code transcripts
+// ============================================================================
+
+/**
+ * Derive session status from VS Code transcript events.
+ *
+ * VS Code transcripts are live append-only logs that often end mid-turn,
+ * so CLI heuristics (lastSessionStatus, hasPendingWork) produce false positives.
+ * Instead, we synthesize status from explicit signals:
+ *
+ * - isTaskComplete: true if the current or last completed turn issued
+ *   a `task_complete` tool call.
+ * - isWorking: true if an assistant turn is open and no task_complete
+ *   has been issued in that turn.
+ * - needsAttention: true if a pending approval tool (exit_plan_mode,
+ *   ask_user, vscode_askQuestions) was started but never completed.
+ * - isIdle: true if no turn is open and no task_complete was issued
+ *   (rare for VS Code, which usually ends mid-turn).
+ */
+function computeVscodeSyntheticStatus(events: RawEvent[]): {
+  isWorking: boolean;
+  isTaskComplete: boolean;
+  needsAttention: boolean;
+  isIdle: boolean;
+  isAborted: boolean;
+} {
+  let inTurn = false;
+  let turnHadTaskComplete = false;
+  let lastCompletedTurnHadTaskComplete = false;
+  const pendingApprovalTools = new Map<string, string>();
+
+  for (const event of events) {
+    if (event.type === 'assistant.turn_start') {
+      inTurn = true;
+      turnHadTaskComplete = false;
+      pendingApprovalTools.clear();
+    } else if (event.type === 'assistant.turn_end') {
+      inTurn = false;
+      lastCompletedTurnHadTaskComplete = turnHadTaskComplete;
+      pendingApprovalTools.clear();
+    } else if (event.type === 'tool.execution_start') {
+      const data = event.data as { toolName?: string; toolCallId?: string };
+      if (data.toolName === 'task_complete') {
+        turnHadTaskComplete = true;
+      }
+      if (
+        data.toolCallId &&
+        ['exit_plan_mode', 'ask_user', 'vscode_askQuestions'].includes(
+          data.toolName ?? '',
+        )
+      ) {
+        pendingApprovalTools.set(data.toolCallId, data.toolName ?? '');
+      }
+    } else if (event.type === 'tool.execution_complete') {
+      const data = event.data as { toolCallId?: string };
+      if (data.toolCallId) {
+        pendingApprovalTools.delete(data.toolCallId);
+      }
+    } else if (event.type === 'abort') {
+      inTurn = false;
+      turnHadTaskComplete = false;
+      pendingApprovalTools.clear();
+    }
+  }
+
+  const isTaskComplete = lastCompletedTurnHadTaskComplete || turnHadTaskComplete;
+  const needsAttention = pendingApprovalTools.size > 0;
+  const isWorking = !isTaskComplete && inTurn;
+  const isIdle = !isTaskComplete && !inTurn;
+
+  return { isWorking, isTaskComplete, needsAttention, isIdle, isAborted: false };
+}
+
+// ============================================================================
 // Summary builder
 // ============================================================================
 
@@ -328,6 +402,7 @@ export function listAllVscodeSessions(): SessionSummary[] {
       ?? 'Untitled session';
 
     const currentMode = getCurrentMode(events);
+    const syntheticStatus = computeVscodeSyntheticStatus(events);
 
     const summary: SessionSummary = {
       id: entry.sessionId,
@@ -340,13 +415,11 @@ export function listAllVscodeSessions(): SessionSummary[] {
       lastActivityAt,
       durationMs: Date.parse(lastActivityAt) - Date.parse(startedAt),
       isOpen,
-      // VS Code transcripts do not reliably emit turn_end / tool_complete
-      // events with the same semantics as CLI, so we do not infer status.
-      needsAttention: false,
-      isWorking: false,
-      isAborted: false,
-      isTaskComplete: false,
-      isIdle: false,
+      needsAttention: syntheticStatus.needsAttention,
+      isWorking: syntheticStatus.isWorking,
+      isAborted: syntheticStatus.isAborted,
+      isTaskComplete: syntheticStatus.isTaskComplete,
+      isIdle: syntheticStatus.isIdle,
       messageCount,
       model: undefined,
       totalApiDurationMs: null,
@@ -433,6 +506,7 @@ export function parseVscodeSessionDir(sessionId: string): SessionDetail | null {
     ?? 'Untitled session';
 
   const currentMode = getCurrentMode(events);
+  const syntheticStatus = computeVscodeSyntheticStatus(events);
 
   const summary: SessionSummary = {
     id: sessionId,
@@ -445,13 +519,11 @@ export function parseVscodeSessionDir(sessionId: string): SessionDetail | null {
     lastActivityAt,
     durationMs: Date.parse(lastActivityAt) - Date.parse(startedAt),
     isOpen,
-    // VS Code transcripts do not reliably emit turn_end / tool_complete
-    // events with the same semantics as CLI, so we do not infer status.
-    needsAttention: false,
-    isWorking: false,
-    isAborted: false,
-    isTaskComplete: false,
-    isIdle: false,
+    needsAttention: syntheticStatus.needsAttention,
+    isWorking: syntheticStatus.isWorking,
+    isAborted: syntheticStatus.isAborted,
+    isTaskComplete: syntheticStatus.isTaskComplete,
+    isIdle: syntheticStatus.isIdle,
     messageCount: messages.filter((m) => m.role === 'user').length,
     model: undefined,
     totalApiDurationMs: null,

@@ -5,6 +5,7 @@ import { getProjectLabel } from '../../hooks/useSessionBrowse.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 import { SessionStatusBadge } from './SessionStatusBadge.tsx';
+import { SourceBadge } from './SourceBadge.tsx';
 
 interface Props {
   session: SessionSummary;
@@ -163,6 +164,7 @@ export function SessionRow({ session, selected = false, onSelectToggle, isPinned
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <SessionStatusBadge session={session} compact pulse={false} />
+              <SourceBadge source={session.source} compact />
               {hasSubAgents && (
                 <button
                   type="button"

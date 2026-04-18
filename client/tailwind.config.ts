@@ -16,6 +16,7 @@ const config: Config = {
           attention: '#f85149',
           active: '#3fb950',
           warning: '#d29922',
+          vscode: '#a371f7',
         },
       },
       fontFamily: {

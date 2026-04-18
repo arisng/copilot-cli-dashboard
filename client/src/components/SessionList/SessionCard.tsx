@@ -5,6 +5,7 @@ import { getProjectLabel } from '../../hooks/useSessionBrowse.ts';
 import { RelativeTime, formatDuration } from '../shared/RelativeTime.tsx';
 import { ModeBadge } from '../shared/modeBadge.tsx';
 import { SessionStatusBadge } from './SessionStatusBadge.tsx';
+import { SourceBadge } from './SourceBadge.tsx';
 
 interface Props {
   session: SessionSummary;
@@ -179,7 +180,10 @@ export function SessionCard({ session, selected = false, onSelectToggle, isPinne
     >
       <div className="px-4 pt-3 pb-3">
         <div className="flex items-start justify-between gap-2">
-          <SessionStatusBadge session={session} pulse={false} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SessionStatusBadge session={session} pulse={false} />
+            <SourceBadge source={session.source} compact />
+          </div>
           <div className="flex items-center gap-2">
             {onPinToggle && (
               <button
