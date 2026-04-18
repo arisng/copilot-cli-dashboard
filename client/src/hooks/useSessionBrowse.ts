@@ -19,7 +19,6 @@ export interface SessionBrowseState {
   projectPath: string | null;
   branch: string | null;
   status: SessionBrowseStatus | null;
-  showUnknownContext: boolean;
   sortField: SessionBrowseSortField;
   sortOrder: SessionBrowseSortOrder;
   page: number;
@@ -59,7 +58,6 @@ export const DEFAULT_SESSION_BROWSE_STATE: SessionBrowseState = {
   projectPath: null,
   branch: null,
   status: null,
-  showUnknownContext: true,
   sortField: 'last_activity',
   sortOrder: 'desc',
   page: 1,
@@ -220,14 +218,9 @@ function getSortValue(session: SessionSummary, sortField: SessionBrowseSortField
   }
 }
 
-export function isUnknownContext(session: SessionSummary): boolean {
-  const projectLabel = getProjectLabel(session.projectPath);
-  return projectLabel === 'Unknown' || projectLabel === '';
-}
-
 export function filterSessionsForBrowse(sessions: SessionSummary[], state: Pick<
   SessionBrowseState,
-  'projectPath' | 'branch' | 'status' | 'showUnknownContext' | 'query'
+  'projectPath' | 'branch' | 'status' | 'query'
 >): SessionSummary[] {
   const selectedBranch = state.projectPath ? state.branch : null;
   const query = state.query?.trim().toLowerCase() ?? '';
@@ -242,11 +235,6 @@ export function filterSessionsForBrowse(sessions: SessionSummary[], state: Pick<
     }
 
     if (state.status && getSessionBrowseStatus(session) !== state.status) {
-      return false;
-    }
-
-    // Filter out Unknown context sessions by default
-    if (!state.showUnknownContext && isUnknownContext(session)) {
       return false;
     }
 
@@ -333,12 +321,10 @@ export function browseSessions(sessions: SessionSummary[], state: SessionBrowseS
   const branchOptions = getBranchOptions(sessions, selectedProjectPath);
   const selectedBranch = branchOptions.some((option) => option.value === state.branch) ? state.branch : null;
   const selectedStatus = state.status && SESSION_BROWSE_STATUS_OPTIONS.includes(state.status) ? state.status : null;
-  const showUnknownContext = state.showUnknownContext ?? false;
   const filteredSessions = filterSessionsForBrowse(sessions, {
     projectPath: selectedProjectPath,
     branch: selectedBranch,
     status: selectedStatus,
-    showUnknownContext,
     query: state.query ?? '',
   });
   const sortedSessions = sortSessionsForBrowse(filteredSessions, state.sortField, state.sortOrder);
@@ -368,7 +354,6 @@ export function useSessionBrowse(sessions: SessionSummary[], state: SessionBrows
       state.page,
       state.pageSize,
       state.projectPath,
-      state.showUnknownContext,
       state.query,
       state.sortField,
       state.sortOrder,

@@ -1637,14 +1637,6 @@ const SIDEBAR_PAGE_SIZE = 10;
     }));
   }
 
-  function handleShowUnknownChange(checked: boolean) {
-    setBrowseState((previous) => ({
-      ...previous,
-      showUnknownContext: checked,
-      page: 1,
-    }));
-  }
-
     return (
       <div className="flex h-full min-w-0 min-h-0 flex-col">
         <div className="rounded-lg border border-gh-border overflow-hidden flex flex-col min-h-0 flex-1">

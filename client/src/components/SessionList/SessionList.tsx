@@ -333,17 +333,6 @@ export function SessionList() {
                 className="min-w-[180px] flex-1 sm:flex-none"
               />
               <BrowseSortOrderToggle value={browseState.sortOrder} onChange={handleSortOrderChange} />
-              <BrowseToggle
-                label="Show Unknown"
-                checked={browseState.showUnknownContext}
-                onChange={(checked) =>
-                  setBrowseState((previous) => ({
-                    ...previous,
-                    showUnknownContext: checked,
-                    page: 1,
-                  }))
-                }
-              />
               {serverConfig?.vscodeSessionsEnabled && (
                 <BrowseToggle
                   label="Show VS Code"
