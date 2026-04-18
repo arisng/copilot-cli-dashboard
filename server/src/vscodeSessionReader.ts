@@ -288,7 +288,21 @@ const VSCODE_CAPABILITIES: SessionCapabilities = {
  * - isIdle: true if no turn is open and no task_complete was issued
  *   (rare for VS Code, which usually ends mid-turn).
  */
-function computeVscodeSyntheticStatus(events: RawEvent[]): {
+const VSCODE_WORKING_RECENCY_MS = 15 * 60 * 1000; // 15 minutes
+
+function isTranscriptRecentlyActive(transcriptPath: string): boolean {
+  try {
+    const stats = fs.statSync(transcriptPath);
+    return Date.now() - stats.mtime.getTime() < VSCODE_WORKING_RECENCY_MS;
+  } catch {
+    return false;
+  }
+}
+
+function computeVscodeSyntheticStatus(
+  events: RawEvent[],
+  transcriptPath: string,
+): {
   isWorking: boolean;
   isTaskComplete: boolean;
   needsAttention: boolean;
@@ -336,7 +350,11 @@ function computeVscodeSyntheticStatus(events: RawEvent[]): {
 
   const isTaskComplete = lastCompletedTurnHadTaskComplete || turnHadTaskComplete;
   const needsAttention = pendingApprovalTools.size > 0;
-  const isWorking = !isTaskComplete && inTurn;
+  // Only show "Working" if the transcript file is still being written to.
+  // VS Code transcripts are append-only logs that often end mid-turn,
+  // so structural in-turn state alone produces false positives for stale sessions.
+  const isRecentlyActive = isTranscriptRecentlyActive(transcriptPath);
+  const isWorking = !isTaskComplete && inTurn && isRecentlyActive;
   const isIdle = !isTaskComplete && !inTurn;
 
   return { isWorking, isTaskComplete, needsAttention, isIdle, isAborted: false };
@@ -402,7 +420,7 @@ export function listAllVscodeSessions(): SessionSummary[] {
       ?? 'Untitled session';
 
     const currentMode = getCurrentMode(events);
-    const syntheticStatus = computeVscodeSyntheticStatus(events);
+    const syntheticStatus = computeVscodeSyntheticStatus(events, entry.transcriptPath);
 
     const summary: SessionSummary = {
       id: entry.sessionId,
@@ -506,7 +524,7 @@ export function parseVscodeSessionDir(sessionId: string): SessionDetail | null {
     ?? 'Untitled session';
 
   const currentMode = getCurrentMode(events);
-  const syntheticStatus = computeVscodeSyntheticStatus(events);
+  const syntheticStatus = computeVscodeSyntheticStatus(events, entry.transcriptPath);
 
   const summary: SessionSummary = {
     id: sessionId,
