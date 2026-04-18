@@ -154,8 +154,14 @@ function hasShutdownEvent(events: RawEvent[]): boolean {
   return events.some((e) => e.type === 'session.shutdown');
 }
 
-function isRootThreadEvent(event: RawEvent): boolean {
-  return event.parentId === null || event.parentId === undefined;
+function isRootThreadEvent(event: RawEvent, allEvents: RawEvent[]): boolean {
+  if (event.parentId === null || event.parentId === undefined) {
+    return true;
+  }
+  // VS Code transcripts chain parentIds: session.start → user.message → assistant.turn_start → ...
+  // A root-thread event is one whose parent is the session.start event.
+  const parent = allEvents.find((e) => e.id === event.parentId);
+  return parent?.type === 'session.start';
 }
 
 function normalizeMessageText(text: string): string {
@@ -165,7 +171,7 @@ function normalizeMessageText(text: string): string {
 function buildPreviewMessages(events: RawEvent[]): import('./sessionTypes.js').MessagePreview[] {
   const previews: import('./sessionTypes.js').MessagePreview[] = [];
   for (const event of events) {
-    if (!isRootThreadEvent(event)) continue;
+    if (!isRootThreadEvent(event, events)) continue;
     if (event.type === 'user.message') {
       const data = event.data as { content?: string };
       previews.push({
@@ -192,6 +198,55 @@ function titleFromContent(content: string | undefined): string {
   const trimmed = content.trim();
   const firstLine = trimmed.split('\n')[0] ?? trimmed;
   return firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine;
+}
+
+/**
+ * Read the generated title from debug-logs/<sessionId>/title-*.jsonl.
+ * VS Code Copilot Chat stores LLM-generated titles in these files.
+ * The title is extracted from the agent_response event's response content.
+ */
+function readVscodeSessionTitle(sessionId: string, workspacePath: string): string | null {
+  const debugLogsDir = path.join(workspacePath, 'GitHub.copilot-chat', 'debug-logs', sessionId);
+  if (!fs.existsSync(debugLogsDir)) {
+    return null;
+  }
+
+  try {
+    const files = fs.readdirSync(debugLogsDir);
+    const titleFile = files.find((f) => f.startsWith('title-') && f.endsWith('.jsonl'));
+    if (!titleFile) {
+      return null;
+    }
+
+    const content = fs.readFileSync(path.join(debugLogsDir, titleFile), 'utf8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const event = JSON.parse(trimmed) as {
+          type?: string;
+          attrs?: {
+            response?: string;
+          };
+        };
+        if (event.type === 'agent_response' && event.attrs?.response) {
+          const resp = JSON.parse(event.attrs.response) as Array<{
+            parts?: Array<{ content?: string }>;
+          }>;
+          const title = resp[0]?.parts?.[0]?.content;
+          if (title) {
+            return title.trim();
+          }
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+  } catch {
+    // Ignore read errors
+  }
+
+  return null;
 }
 
 const VSCODE_CAPABILITIES: SessionCapabilities = {
@@ -228,7 +283,7 @@ export function listAllVscodeSessions(): SessionSummary[] {
     let messageCount = 0;
     const previewMessages = buildPreviewMessages(events);
     for (const event of events) {
-      if (event.type === 'user.message' && isRootThreadEvent(event)) {
+      if (event.type === 'user.message' && isRootThreadEvent(event, events)) {
         messageCount += 1;
       }
     }
@@ -238,11 +293,26 @@ export function listAllVscodeSessions(): SessionSummary[] {
     const projectPath = workspaceUriToPath(workspaceData?.workspaceUri);
 
     const firstUserEvent = events.find(
-      (e) => e.type === 'user.message' && isRootThreadEvent(e)
+      (e) => e.type === 'user.message' && isRootThreadEvent(e, events)
     );
     const firstUserContent = firstUserEvent
       ? normalizeMessageText((firstUserEvent.data as { content?: string }).content ?? '')
       : undefined;
+
+    const firstAssistantEvent = events.find(
+      (e) => e.type === 'assistant.message' && isRootThreadEvent(e, events)
+    );
+    const firstAssistantContent = firstAssistantEvent
+      ? normalizeMessageText((firstAssistantEvent.data as { content?: string }).content ?? '')
+      : undefined;
+
+    // Title priority: debug-logs title > user message > assistant message > workspace name > fallback
+    const generatedTitle = readVscodeSessionTitle(entry.sessionId, entry.workspacePath);
+    const title = generatedTitle
+      ?? titleFromContent(firstUserContent)
+      ?? titleFromContent(firstAssistantContent)
+      ?? titleFromContent(path.basename(projectPath))
+      ?? 'Untitled session';
 
     const reducerEvents = events; // Use full events for status logic
     const currentMode = getCurrentMode(reducerEvents);
@@ -251,7 +321,7 @@ export function listAllVscodeSessions(): SessionSummary[] {
     const summary: SessionSummary = {
       id: entry.sessionId,
       source: 'vscode',
-      title: titleFromContent(firstUserContent),
+      title,
       summary: null,
       projectPath,
       gitBranch: null,
@@ -330,11 +400,25 @@ export function parseVscodeSessionDir(sessionId: string): SessionDetail | null {
   const projectPath = workspaceUriToPath(workspaceData?.workspaceUri);
 
   const firstUserEvent = events.find(
-    (e) => e.type === 'user.message' && isRootThreadEvent(e)
+    (e) => e.type === 'user.message' && isRootThreadEvent(e, events)
   );
   const firstUserContent = firstUserEvent
     ? normalizeMessageText((firstUserEvent.data as { content?: string }).content ?? '')
     : undefined;
+
+  const firstAssistantEvent = events.find(
+    (e) => e.type === 'assistant.message' && isRootThreadEvent(e, events)
+  );
+  const firstAssistantContent = firstAssistantEvent
+    ? normalizeMessageText((firstAssistantEvent.data as { content?: string }).content ?? '')
+    : undefined;
+
+  const generatedTitle = readVscodeSessionTitle(sessionId, entry.workspacePath);
+  const title = generatedTitle
+    ?? titleFromContent(firstUserContent)
+    ?? titleFromContent(firstAssistantContent)
+    ?? titleFromContent(path.basename(projectPath))
+    ?? 'Untitled session';
 
   const reducerEvents = events;
   const currentMode = getCurrentMode(reducerEvents);
@@ -343,7 +427,7 @@ export function parseVscodeSessionDir(sessionId: string): SessionDetail | null {
   const summary: SessionSummary = {
     id: sessionId,
     source: 'vscode',
-    title: titleFromContent(firstUserContent),
+    title,
     summary: null,
     projectPath,
     gitBranch: null,
