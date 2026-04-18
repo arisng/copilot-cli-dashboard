@@ -105,22 +105,22 @@ import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 ### Supported features
 
-| Feature | Desktop | Mobile | Message |
-|---------|---------|--------|---------|
-| Headings (H1–H6) | ✅ | ✅ | ✅ |
-| Paragraphs | ✅ | ✅ | ✅ |
-| Bold, italic, strikethrough | ✅ | ✅ | ✅ |
-| Inline code | ✅ | ✅ | ✅ |
-| Fenced code blocks | ✅ + syntax highlight | ✅ + syntax highlight | ✅ + syntax highlight |
-| Unordered lists | ✅ | ✅ | ✅ |
-| Ordered lists | ✅ | ✅ | ✅ |
-| Nested lists (mixed) | ✅ | ✅ | ✅ |
-| Task lists (`- [ ]`) | ✅ | ✅ | ✅ |
-| Tables | ✅ | ✅ | ✅ |
-| Blockquotes | ✅ | ✅ | ✅ |
-| Horizontal rules | ✅ | ✅ | ✅ |
-| Links (external) | ✅ (new tab) | ✅ (new tab) | ✅ (new tab) |
-| XML-like tags | ✅ (preserved) | ✅ (preserved) | ✅ (preserved) |
+| Feature                     | Desktop              | Mobile               | Message              |
+| --------------------------- | -------------------- | -------------------- | -------------------- |
+| Headings (H1–H6)            | ✅                    | ✅                    | ✅                    |
+| Paragraphs                  | ✅                    | ✅                    | ✅                    |
+| Bold, italic, strikethrough | ✅                    | ✅                    | ✅                    |
+| Inline code                 | ✅                    | ✅                    | ✅                    |
+| Fenced code blocks          | ✅ + syntax highlight | ✅ + syntax highlight | ✅ + syntax highlight |
+| Unordered lists             | ✅                    | ✅                    | ✅                    |
+| Ordered lists               | ✅                    | ✅                    | ✅                    |
+| Nested lists (mixed)        | ✅                    | ✅                    | ✅                    |
+| Task lists (`- [ ]`)        | ✅                    | ✅                    | ✅                    |
+| Tables                      | ✅                    | ✅                    | ✅                    |
+| Blockquotes                 | ✅                    | ✅                    | ✅                    |
+| Horizontal rules            | ✅                    | ✅                    | ✅                    |
+| Links (external)            | ✅ (new tab)          | ✅ (new tab)          | ✅ (new tab)          |
+| XML-like tags               | ✅ (preserved)        | ✅ (preserved)        | ✅ (preserved)        |
 
 ### Security
 
@@ -144,12 +144,12 @@ The topology graph renders a turn-by-turn orchestration view for a selected sess
 
 Specialised components render known tool types, with a generic `ToolCallBlock` fallback:
 
-| Tool | Component | Key fields |
-|------|-----------|------------|
-| `ask_user` | `AskUserBlock` | `message`/`question`, `requestedSchema`/`choices` |
-| `edit` | `EditBlock` | `path`, `old_str`, `new_str` |
-| `bash` | `BashBlock` | `command`, `description`, `mode` |
-| everything else | `ToolCallBlock` | generic JSON input + output |
+| Tool            | Component       | Key fields                                        |
+| --------------- | --------------- | ------------------------------------------------- |
+| `ask_user`      | `AskUserBlock`  | `message`/`question`, `requestedSchema`/`choices` |
+| `edit`          | `EditBlock`     | `path`, `old_str`, `new_str`                      |
+| `bash`          | `BashBlock`     | `command`, `description`, `mode`                  |
+| everything else | `ToolCallBlock` | generic JSON input + output                       |
 
 `ask_user` handles two argument schemas:
 
@@ -164,11 +164,11 @@ The Session Detail view includes a file browser for viewing session artifacts in
 
 ### Supported file types
 
-| Type | Extensions | Behavior |
-|------|------------|----------|
-| **Images** | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.bmp`, `.ico` | Inline preview with download option |
-| **Markdown** | `.md`, `.markdown`, `.mdown` | Rendered with `MarkdownRenderer` |
-| **Text** | any other | Displayed as plain text |
+| Type         | Extensions                                                       | Behavior                            |
+| ------------ | ---------------------------------------------------------------- | ----------------------------------- |
+| **Images**   | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.bmp`, `.ico` | Inline preview with download option |
+| **Markdown** | `.md`, `.markdown`, `.mdown`                                     | Rendered with `MarkdownRenderer`    |
+| **Text**     | any other                                                        | Displayed as plain text             |
 
 ### Image preview
 
